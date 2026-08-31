@@ -19,6 +19,8 @@ export default function AccountsSettings() {
   const [coaSearch, setCoaSearch] = useState('')
   const [coaTypeFilter, setCoaTypeFilter] = useState('ALL')
   const [coaModalOpen, setCoaModalOpen] = useState(false)
+  const [editingCoa, setEditingCoa] = useState(null)
+  const [deleteCoaTarget, setDeleteCoaTarget] = useState(null)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -44,35 +46,81 @@ export default function AccountsSettings() {
     return c.name.toLowerCase().includes(s) || c.code.includes(s) || c.category.toLowerCase().includes(s)
   })
 
+  const openCreateCoa = () => {
+    setEditingCoa(null)
+    setNewCoa({
+      code: '',
+      name: '',
+      type: 'Expense',
+      category: 'Operational',
+      normalBalance: 'Debit'
+    })
+    setCoaModalOpen(true)
+  }
+
+  const openEditCoa = (c) => {
+    setEditingCoa(c)
+    setNewCoa({
+      code: c.code || '',
+      name: c.name || '',
+      type: c.type || 'Expense',
+      category: c.category || 'Operational',
+      normalBalance: c.normalBalance || 'Debit'
+    })
+    setCoaModalOpen(true)
+  }
+
   const handleSaveCoa = async (e) => {
     e.preventDefault()
-    if (!newCoa.code || !newCoa.name) {
+    if (!newCoa.code.trim() || !newCoa.name.trim()) {
       toastError('Account code and name are required')
       return
     }
 
-    if (chartOfAccounts.some(c => c.code === newCoa.code)) {
+    if (!editingCoa && chartOfAccounts.some(c => c.code === newCoa.code)) {
       toastError(`Account Code ${newCoa.code} already exists in Chart of Accounts`)
       return
     }
 
     setSaving(true)
     try {
-      const updated = [
-        ...chartOfAccounts,
-        {
+      let updated
+      if (editingCoa) {
+        updated = chartOfAccounts.map(c => (c.id === editingCoa.id || c.code === editingCoa.code) ? {
+          ...c,
           ...newCoa,
-          id: newCoa.code,
-          isSystem: false
-        }
-      ]
+          id: newCoa.code
+        } : c)
+        success(`Account [${newCoa.code}] updated successfully`)
+      } else {
+        updated = [
+          ...chartOfAccounts,
+          {
+            ...newCoa,
+            id: newCoa.code,
+            isSystem: false
+          }
+        ]
+        success(`Account [${newCoa.code}] ${newCoa.name} added to Chart of Accounts`)
+      }
       await updateChartOfAccounts(updated)
-      success(`Account [${newCoa.code}] ${newCoa.name} added to Chart of Accounts`)
       setCoaModalOpen(false)
     } catch (err) {
       toastError('Failed to save account: ' + err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleDeleteCoa = async () => {
+    if (!deleteCoaTarget) return
+    try {
+      const updated = chartOfAccounts.filter(c => c.id !== deleteCoaTarget.id && c.code !== deleteCoaTarget.code)
+      await updateChartOfAccounts(updated)
+      success(`Account [${deleteCoaTarget.code}] ${deleteCoaTarget.name} deleted`)
+      setDeleteCoaTarget(null)
+    } catch (err) {
+      toastError('Failed to delete account: ' + err.message)
     }
   }
 
@@ -177,7 +225,7 @@ export default function AccountsSettings() {
               <option value="Expense">Expenses</option>
             </select>
 
-            <button className="btn btn-primary btn-sm" onClick={() => setCoaModalOpen(true)}>
+            <button className="btn btn-primary btn-sm" onClick={openCreateCoa}>
               + Add Account Code
             </button>
           </div>
@@ -192,12 +240,18 @@ export default function AccountsSettings() {
                 <th>Category / Type</th>
                 <th>Sub-Category</th>
                 <th>Normal Balance</th>
-                <th>System Account</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredCoa.map(c => (
-                <tr key={c.id}>
+              {filteredCoa.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>
+                    No accounts found matching your search.
+                  </td>
+                </tr>
+              ) : filteredCoa.map(c => (
+                <tr key={c.id || c.code}>
                   <td className="mono" style={{ color: 'var(--gold)', fontWeight: 700 }}>{c.code}</td>
                   <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{c.name}</td>
                   <td>
@@ -208,9 +262,22 @@ export default function AccountsSettings() {
                   <td style={{ color: 'var(--text-secondary)' }}>{c.category}</td>
                   <td className="mono" style={{ fontSize: '0.8rem' }}>{c.normalBalance}</td>
                   <td>
-                    <span style={{ fontSize: '0.72rem', color: c.isSystem ? 'var(--text-muted)' : 'var(--teal)' }}>
-                      {c.isSystem ? '🔒 System Core' : 'Custom'}
-                    </span>
+                    <div className="actions-col">
+                      <button
+                        className="btn btn-secondary btn-sm btn-icon"
+                        onClick={() => openEditCoa(c)}
+                        title="Edit Account Code & Title"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm btn-icon"
+                        onClick={() => setDeleteCoaTarget(c)}
+                        title="Delete Account"
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -219,17 +286,17 @@ export default function AccountsSettings() {
         </div>
       </div>
 
-      {/* Add Custom COA Modal */}
+      {/* Add / Edit COA Modal */}
       <Modal
         isOpen={coaModalOpen}
         onClose={() => setCoaModalOpen(false)}
-        title="Add Account to Chart of Accounts"
+        title={editingCoa ? `Edit Account — [${editingCoa.code}] ${editingCoa.name}` : 'Add Account to Chart of Accounts'}
         size="md"
         footer={
           <>
             <button className="btn btn-ghost" onClick={() => setCoaModalOpen(false)} disabled={saving}>Cancel</button>
             <button className="btn btn-primary" onClick={handleSaveCoa} disabled={saving}>
-              {saving ? 'Saving...' : 'Add Account'}
+              {saving ? 'Saving...' : editingCoa ? 'Update Account' : 'Add Account'}
             </button>
           </>
         }
@@ -289,6 +356,15 @@ export default function AccountsSettings() {
           </div>
         </form>
       </Modal>
+
+      {/* Delete COA Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteCoaTarget}
+        onClose={() => setDeleteCoaTarget(null)}
+        onConfirm={handleDeleteCoa}
+        title="Delete Account from Chart of Accounts"
+        message={`Are you sure you want to delete [${deleteCoaTarget?.code}] ${deleteCoaTarget?.name}?`}
+      />
 
       {/* Danger Zone: Clear & Reset Accounts */}
       <div className="card" style={{ border: '1px solid rgba(239,100,97,0.3)', background: 'rgba(239,100,97,0.02)' }}>
