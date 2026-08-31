@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import AccountsHub from './pages/accounts/AccountsHub'
 import CustomerList from './pages/customers/CustomerList'
 import AgentList from './pages/agents/AgentList'
 import EmployeeList from './pages/employees/EmployeeList'
@@ -30,6 +31,12 @@ export default function App() {
             <Route path="/dashboard" element={
               <ProtectedRoute module="dashboard" title="Dashboard">
                 <Dashboard />
+              </ProtectedRoute>
+            } />
+
+            <Route path="/accounts" element={
+              <ProtectedRoute module="accounts" title="Banking & Accounts">
+                <AccountsHub />
               </ProtectedRoute>
             } />
 

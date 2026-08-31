@@ -84,10 +84,10 @@ export function AuthProvider({ children }) {
 
   // Permission map
   const PERMISSIONS = {
-    Admin: ['dashboard', 'customers', 'agents', 'employees', 'items', 'invoices',
+    Admin: ['dashboard', 'accounts', 'customers', 'agents', 'employees', 'items', 'invoices',
             'due-invoices', 'journeys', 'receipts', 'vendor-payments', 'expenses',
             'reports', 'users', 'settings'],
-    CustomerService: ['dashboard', 'customers', 'invoices', 'due-invoices',
+    CustomerService: ['dashboard', 'accounts', 'customers', 'invoices', 'due-invoices',
                       'journeys', 'receipts', 'expenses', 'reports'],
     Agent: ['dashboard', 'customers', 'reports'],
   }
