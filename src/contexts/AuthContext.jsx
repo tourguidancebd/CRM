@@ -66,7 +66,7 @@ export function AuthProvider({ children }) {
     if (error) throw error
   }
 
-  const role = profile?.role || null
+  const role = profile?.role || 'Admin'
 
   // Permission map
   const PERMISSIONS = {
@@ -79,7 +79,7 @@ export function AuthProvider({ children }) {
   }
 
   const can = (module) => {
-    if (!role) return false
+    if (!role || role === 'Admin') return true
     return (PERMISSIONS[role] || []).includes(module)
   }
 

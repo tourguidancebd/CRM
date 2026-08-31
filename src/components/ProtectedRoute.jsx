@@ -33,10 +33,13 @@ export function ProtectedRoute({ children, module, title }) {
           <h2 style={{ fontFamily: 'var(--font-heading)', color: 'var(--text-primary)', marginBottom: '8px' }}>
             Access Denied
           </h2>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: 20 }}>
             You don't have permission to access this module.<br />
             Contact your administrator if you believe this is an error.
           </p>
+          <a href="/dashboard" className="btn btn-primary">
+            Go to Dashboard
+          </a>
         </div>
       </Layout>
     )
