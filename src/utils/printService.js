@@ -4,9 +4,10 @@
  */
 
 export function parseReceiptNote(note) {
-  if (!note) return { paymentMethod: 'Cash', accountName: 'Main Office Cash Vault', cleanNote: '' }
+  if (!note) return { paymentMethod: 'Cash', accountName: 'Main Office Cash Vault', trxId: '', cleanNote: '' }
   let paymentMethod = 'Cash'
   let accountName = 'Main Office Cash Vault'
+  let trxId = ''
   let cleanNote = String(note)
 
   const methodMatch = cleanNote.match(/\[Paid Via:\s*([^\]]+)\]/)
@@ -21,7 +22,13 @@ export function parseReceiptNote(note) {
     cleanNote = cleanNote.replace(/\[Received To:\s*([^\]]+)\]/, '').trim()
   }
 
-  return { paymentMethod, accountName, cleanNote }
+  const trxMatch = cleanNote.match(/\[TrxID:\s*([^\]]+)\]/)
+  if (trxMatch) {
+    trxId = trxMatch[1].trim()
+    cleanNote = cleanNote.replace(/\[TrxID:\s*([^\]]+)\]/, '').trim()
+  }
+
+  return { paymentMethod, accountName, trxId, cleanNote }
 }
 
 /**

@@ -18,9 +18,10 @@ const EMPTY_LINE = () => ({ item_id: '', name: '', qty: 1, price: '', buying_pri
 
 const INIT_FORM = {
   customer_id: '', sales_by: '', invoice_date: today(), travel_date: '',
-  num_travelers: 1, discount: 0, paid_now: 0, bank_account: 'none',
-  payment_method: 'Cash',
-  account_name: 'Main Office Cash Vault',
+  num_travelers: 1, discount: 0, paid_now: 0, bank_account: 'primary',
+  payment_method: 'bKash',
+  account_name: 'bKash Merchant Account',
+  payment_reference: '',
   items: [EMPTY_LINE()],
 }
 
@@ -75,14 +76,15 @@ export default function InvoiceList() {
   useEffect(() => { load() }, [load])
 
   const openCreate = (prefillCustomer = null) => {
-    const defaultAcc = accounts[0]?.name || 'Main Office Cash Vault'
+    const bkashAcc = accounts.find(a => a.name.toLowerCase().includes('bkash'))?.name || accounts[0]?.name || 'bKash Merchant Account'
     setForm({
       ...INIT_FORM,
       customer_id: prefillCustomer?.id || '',
       items: [EMPTY_LINE()],
       invoice_date: today(),
-      account_name: defaultAcc,
-      payment_method: 'Cash'
+      payment_method: 'bKash',
+      account_name: bkashAcc,
+      payment_reference: '',
     })
     setEditingId(null)
     setModalOpen(true)
@@ -92,6 +94,9 @@ export default function InvoiceList() {
     // Load full invoice items
     const { data: invData } = await supabase.from('invoices').select('*').eq('id', inv.id).single()
     const defaultAcc = accounts[0]?.name || 'Main Office Cash Vault'
+    const latestReceipt = (inv.receipts || []).slice(-1)[0]
+    const parsed = latestReceipt ? parseReceiptNote(latestReceipt.note) : parseReceiptNote(invData.bank_choice)
+
     setForm({
       customer_id: invData.customer_id || '',
       sales_by: invData.sales_by_id || invData.sales_by || '',
@@ -100,13 +105,32 @@ export default function InvoiceList() {
       num_travelers: invData.travelers || invData.num_travelers || 1,
       discount: invData.discount || 0,
       paid_now: 0, // Don't re-apply past payment
-      payment_method: 'Cash',
-      account_name: defaultAcc,
-      bank_account: invData.bank_choice || invData.bank_account || 'primary',
+      payment_method: parsed.paymentMethod || 'bKash',
+      account_name: parsed.accountName || defaultAcc,
+      payment_reference: parsed.trxId || '',
+      bank_account: invData.bank_choice?.toLowerCase().includes('bank') ? 'primary' : 'none',
       items: (invData.items && invData.items.length > 0) ? invData.items : [EMPTY_LINE()],
     })
     setEditingId(inv.id)
     setModalOpen(true)
+  }
+
+  const handlePaymentMethodChange = (newMethod) => {
+    let newAcc = form.account_name
+    if (newMethod === 'bKash') {
+      const match = accounts.find(a => a.name.toLowerCase().includes('bkash'))
+      newAcc = match ? match.name : 'bKash Merchant Account'
+    } else if (newMethod === 'Nagad') {
+      const match = accounts.find(a => a.name.toLowerCase().includes('nagad'))
+      newAcc = match ? match.name : 'Nagad Business Account'
+    } else if (newMethod === 'Bank Transfer') {
+      const match = accounts.find(a => a.type === 'bank' || a.name.toLowerCase().includes('bank'))
+      newAcc = match ? match.name : 'Islami Bank Bangladesh Ltd'
+    } else if (newMethod === 'Cash') {
+      const match = accounts.find(a => a.type === 'cash' || a.name.toLowerCase().includes('cash') || a.name.toLowerCase().includes('vault'))
+      newAcc = match ? match.name : 'Main Office Cash Vault'
+    }
+    setForm(f => ({ ...f, payment_method: newMethod, account_name: newAcc }))
   }
 
   // Line item helpers
@@ -144,6 +168,7 @@ export default function InvoiceList() {
 
     setSaving(true)
     try {
+      const paymentTag = `[Paid Via: ${form.payment_method || 'bKash'}] [Received To: ${form.account_name || 'bKash Merchant Account'}]${form.payment_reference ? ` [TrxID: ${form.payment_reference.trim()}]` : ''}`
       const payload = {
         customer_id: form.customer_id,
         sales_by_id: form.sales_by || null,
@@ -152,7 +177,7 @@ export default function InvoiceList() {
         travelers: parseInt(form.num_travelers) || 1,
         discount: parseFloat(form.discount) || 0,
         grand_total: grandTotal,
-        bank_choice: form.bank_account || 'primary',
+        bank_choice: paymentTag,
         items: form.items.map(i => ({
           item_id: i.item_id || null,
           name: i.name,
@@ -171,7 +196,7 @@ export default function InvoiceList() {
         if (addPayment > 0) {
           const rcptConfig = settings?.idSettings?.receipt || idSettings?.receipt
           const rcptId = await generateId('receipt', 'receipts', rcptConfig)
-          const paymentNote = `[Paid Via: ${form.payment_method || 'Cash'}] [Received To: ${form.account_name || 'Main Office Cash Vault'}] Additional payment on invoice update`
+          const paymentNote = `${paymentTag} Additional payment on invoice update`
           await supabase.from('receipts').insert({
             id: rcptId,
             customer_id: form.customer_id,
@@ -193,7 +218,7 @@ export default function InvoiceList() {
         if (paidNow > 0) {
           const rcptConfig = settings?.idSettings?.receipt || idSettings?.receipt
           const rcptId = await generateId('receipt', 'receipts', rcptConfig)
-          const paymentNote = `[Paid Via: ${form.payment_method || 'Cash'}] [Received To: ${form.account_name || 'Main Office Cash Vault'}] Paid at invoice creation`
+          const paymentNote = `${paymentTag} Paid at invoice creation`
           await supabase.from('receipts').insert({
             id: rcptId,
             customer_id: form.customer_id,
@@ -203,7 +228,7 @@ export default function InvoiceList() {
             note: paymentNote,
           })
         }
-        success(`Invoice ${newId} created`)
+        success(`Invoice ${newId} created with payment to ${form.account_name}`)
       }
       setModalOpen(false)
       load()
@@ -288,6 +313,7 @@ export default function InvoiceList() {
                 <tr>
                   <th>Invoice #</th><th>Date</th><th>Travel Date</th>
                   <th>Customer</th><th>Phone</th>
+                  <th>Payment Channel</th>
                   <th className="text-right">Total</th><th className="text-right">Paid</th><th className="text-right">Due</th>
                   <th>Sales By</th><th>Status</th><th>Actions</th>
                 </tr>
@@ -296,6 +322,12 @@ export default function InvoiceList() {
                 {filtered.map(inv => {
                   const received = invoiceReceived(inv.receipts || [])
                   const due = (parseFloat(inv.grand_total) || 0) - received
+                  const latestReceipt = (inv.receipts || []).slice(-1)[0]
+                  const parsed = latestReceipt ? parseReceiptNote(latestReceipt.note) : parseReceiptNote(inv.bank_choice)
+                  const isBkash = parsed.paymentMethod.toLowerCase().includes('bkash') || parsed.accountName.toLowerCase().includes('bkash')
+                  const isBank = parsed.paymentMethod.toLowerCase().includes('bank') || parsed.accountName.toLowerCase().includes('bank')
+                  const isCash = parsed.paymentMethod.toLowerCase().includes('cash') || parsed.accountName.toLowerCase().includes('vault')
+
                   return (
                     <tr key={inv.id}>
                       <td className="mono" style={{ color: 'var(--gold)' }}>{inv.id}</td>
@@ -303,6 +335,17 @@ export default function InvoiceList() {
                       <td style={{ color: 'var(--teal)', fontWeight: 500 }}>{formatDate(inv.travel_date)}</td>
                       <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{inv.customers?.name || '—'}</td>
                       <td className="mono">{inv.customers?.mobile || '—'}</td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span className={`pill ${isBkash ? 'pill-partial' : isBank ? 'pill-gold' : isCash ? 'pill-paid' : 'pill-gold'}`} style={{ fontSize: '0.72rem' }}>
+                            {isBkash ? '📱 ' : isBank ? '🏛️ ' : isCash ? '💵 ' : '💳 '}
+                            {parsed.paymentMethod}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }} className="truncate" title={parsed.accountName}>
+                            {parsed.accountName}
+                          </span>
+                        </div>
+                      </td>
                       <td className="mono text-right">{money(inv.grand_total, currencySymbol)}</td>
                       <td className="mono text-right" style={{ color: 'var(--teal)' }}>{money(received, currencySymbol)}</td>
                       <td className="mono text-right" style={{ color: due > 0 ? 'var(--red)' : 'var(--text-muted)' }}>{money(due, currencySymbol)}</td>
@@ -327,12 +370,12 @@ export default function InvoiceList() {
       </div>
 
       {/* Invoice Form Modal */}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? `Edit Invoice ${editingId}` : 'New Invoice'} size="xl"
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? `Edit Invoice ${editingId}` : 'New Invoice / Bill Preparation'} size="xl"
         footer={
           <>
             <button className="btn btn-ghost" onClick={() => setModalOpen(false)} disabled={saving}>Cancel</button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving} id="save-invoice-btn">
-              {saving ? 'Saving...' : (editingId ? 'Update Invoice' : 'Create Invoice')}
+              {saving ? 'Saving...' : (editingId ? 'Update Invoice' : 'Create & Issue Bill')}
             </button>
           </>
         }
@@ -360,7 +403,7 @@ export default function InvoiceList() {
             </div>
           </div>
 
-          <div className="form-grid form-grid-3">
+          <div className="form-grid form-grid-2">
             <div className="form-group">
               <label className="form-label">Invoice Date</label>
               <input type="date" className="form-input" value={form.invoice_date} onChange={e => set('invoice_date', e.target.value)} />
@@ -369,18 +412,10 @@ export default function InvoiceList() {
               <label className="form-label required" style={{ color: 'var(--gold)' }}>✈ Travel Date (Required)</label>
               <input type="date" className="form-input" style={{ borderColor: 'rgba(201,162,75,0.4)' }} value={form.travel_date} onChange={e => set('travel_date', e.target.value)} required />
             </div>
-            <div className="form-group">
-              <label className="form-label">Print Bank Account</label>
-              <select className="form-select" value={form.bank_account} onChange={e => set('bank_account', e.target.value)}>
-                <option value="none">None</option>
-                {settings?.primaryBank?.bankName && <option value="primary">Primary Bank ({settings.primaryBank.bankName})</option>}
-                {settings?.secondaryBank?.bankName && <option value="secondary">Secondary Bank ({settings.secondaryBank.bankName})</option>}
-              </select>
-            </div>
           </div>
 
           <hr className="divider" />
-          <div style={{ marginBottom: 8, fontFamily: 'var(--font-heading)', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Line Items</div>
+          <div style={{ marginBottom: 8, fontFamily: 'var(--font-heading)', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Line Items (Services &amp; Packages)</div>
 
           <table className="line-items-table">
             <thead>
@@ -439,6 +474,129 @@ export default function InvoiceList() {
             <PlusIcon /> Add Line Item
           </button>
 
+          {/* Customer Payment & Settlement Dropdowns (Bank / bKash / Cash) */}
+          <div style={{
+            background: 'rgba(201,162,75,0.06)',
+            border: '1px solid rgba(201,162,75,0.3)',
+            borderRadius: 10,
+            padding: '16px 18px',
+            marginBottom: 20
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                💳 Customer Payment Method &amp; Bank / bKash Account
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Select how the customer pays or which account to mention on the bill
+              </div>
+            </div>
+
+            <div className="form-grid form-grid-2">
+              <div className="form-group" style={{ marginBottom: 12 }}>
+                <label className="form-label required">Payment Method / Channel (Paid Via)</label>
+                <select
+                  className="form-select"
+                  value={form.payment_method}
+                  onChange={e => handlePaymentMethodChange(e.target.value)}
+                  style={{ fontWeight: 600 }}
+                >
+                  <option value="bKash">📱 bKash (Mobile Banking)</option>
+                  <option value="Bank Transfer">🏛️ Bank Transfer / Deposit</option>
+                  <option value="Nagad">📱 Nagad (Mobile Banking)</option>
+                  <option value="Cash">💵 Cash in Hand</option>
+                  <option value="Rocket">📱 Rocket (DBBL)</option>
+                  <option value="Credit Card">💳 Credit / Debit Card</option>
+                  <option value="Cheque">📜 Cheque</option>
+                </select>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 12 }}>
+                <label className="form-label required">Receiving Account / Wallet / Number</label>
+                <select
+                  className="form-select"
+                  value={form.account_name}
+                  onChange={e => set('account_name', e.target.value)}
+                  style={{ fontWeight: 600 }}
+                >
+                  {accounts.length > 0 ? (
+                    accounts.map(a => (
+                      <option key={a.id} value={a.name}>
+                        {a.type === 'bank' ? '🏛️ Bank: ' : a.type === 'cash' ? '💵 Cash: ' : '📱 Mobile: '}
+                        {a.name} ({money(a.currentBalance, currencySymbol)})
+                      </option>
+                    ))
+                  ) : (
+                    <>
+                      <option value="bKash Merchant Account">📱 bKash Merchant Account</option>
+                      <option value="bKash Personal / Agent">📱 bKash Personal / Agent</option>
+                      <option value="Islami Bank Bangladesh Ltd">🏛️ Islami Bank Bangladesh Ltd</option>
+                      <option value="The City Bank Limited">🏛️ The City Bank Limited</option>
+                      <option value="Main Office Cash Vault">💵 Main Office Cash Vault</option>
+                      <option value="Nagad Business Account">📱 Nagad Business Account</option>
+                    </>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="form-grid form-grid-2">
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label className="form-label" style={{ margin: 0 }}>
+                    {editingId ? `Add Payment (${currencySymbol})` : `Amount Paid Now / Advance (${currencySymbol})`}
+                  </label>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '1px 6px', color: 'var(--teal)' }}
+                      onClick={() => set('paid_now', String(grandTotal > 0 ? grandTotal : 0))}
+                    >
+                      Full ({money(grandTotal, currencySymbol)})
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '1px 6px', color: 'var(--gold)' }}
+                      onClick={() => set('paid_now', String(grandTotal > 0 ? (grandTotal / 2).toFixed(2) : 0))}
+                    >
+                      50% Advance
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: '0.7rem', padding: '1px 6px', color: 'var(--text-muted)' }}
+                      onClick={() => set('paid_now', '0')}
+                    >
+                      Unpaid (0)
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className="form-input"
+                  placeholder="0.00"
+                  value={form.paid_now}
+                  onChange={e => set('paid_now', e.target.value)}
+                  style={{ fontWeight: 700, color: 'var(--teal)', fontSize: '1rem' }}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Payment TrxID / Reference / Cheque #</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. bKash TrxID: 9X87KL or Cheque #01923"
+                  value={form.payment_reference || ''}
+                  onChange={e => set('payment_reference', e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Summary */}
           <div className="form-grid form-grid-2">
             <div>
@@ -446,60 +604,6 @@ export default function InvoiceList() {
                 <label className="form-label">Discount ({currencySymbol})</label>
                 <input type="number" step="0.01" min="0" className="form-input" value={form.discount} onChange={e => set('discount', e.target.value)} />
               </div>
-              <div className="form-group">
-                <label className="form-label">{editingId ? `Add Payment (${currencySymbol})` : `Paid Now / Advance (${currencySymbol})`}</label>
-                <input type="number" step="0.01" min="0" className="form-input" placeholder="0.00" value={form.paid_now} onChange={e => set('paid_now', e.target.value)} />
-                {editingId && <div className="form-hint">Optional: enter an amount to record an additional money receipt.</div>}
-              </div>
-
-              {parseFloat(form.paid_now) > 0 && (
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', marginBottom: 8 }}>
-                    💳 Payment Method &amp; Destination Account
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 8 }}>
-                    <label className="form-label required">Paid Via (Payment Method)</label>
-                    <select
-                      className="form-select"
-                      value={form.payment_method}
-                      onChange={e => set('payment_method', e.target.value)}
-                    >
-                      <option value="Cash">💵 Cash</option>
-                      <option value="Bank Transfer">🏛️ Bank Transfer</option>
-                      <option value="bKash">📱 bKash</option>
-                      <option value="Nagad">📱 Nagad</option>
-                      <option value="Rocket">📱 Rocket</option>
-                      <option value="Credit Card">💳 Credit Card</option>
-                      <option value="Cheque">📜 Cheque</option>
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label required">Received Into Account / Wallet</label>
-                    <select
-                      className="form-select"
-                      value={form.account_name}
-                      onChange={e => set('account_name', e.target.value)}
-                    >
-                      {accounts.length > 0 ? (
-                        accounts.map(a => (
-                          <option key={a.id} value={a.name}>
-                            {a.type === 'bank' ? '🏛️ Bank: ' : a.type === 'cash' ? '💵 Cash: ' : '📱 Mobile: '}
-                            {a.name} ({money(a.currentBalance, currencySymbol)})
-                          </option>
-                        ))
-                      ) : (
-                        <>
-                          <option value="Main Office Cash Vault">💵 Main Office Cash Vault</option>
-                          <option value="Islami Bank Bangladesh Ltd">🏛️ Islami Bank Bangladesh Ltd</option>
-                          <option value="The City Bank Limited">🏛️ The City Bank Limited</option>
-                          <option value="bKash Merchant Account">📱 bKash Merchant Account</option>
-                          <option value="Nagad Business Account">📱 Nagad Business Account</option>
-                        </>
-                      )}
-                    </select>
-                  </div>
-                </div>
-              )}
             </div>
             <div className="invoice-summary">
               <div className="invoice-summary-row">
@@ -656,18 +760,24 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
   const items = inv.items || []
   const subtotal = invoiceSubtotal(items)
 
+  const latestReceipt = (receipts || []).slice(-1)[0]
+  const parsed = latestReceipt ? parseReceiptNote(latestReceipt.note) : parseReceiptNote(inv.bank_choice)
+  const paymentMethod = parsed.paymentMethod || 'bKash'
+  const accountName = parsed.accountName || 'bKash Merchant Account'
+  const trxId = parsed.trxId || ''
+
   const bankChoice = inv.bank_choice || inv.bank_account || 'none'
-  const bank = bankChoice === 'primary' ? settings?.primaryBank :
+  const bank = bankChoice === 'primary' || bankChoice?.toLowerCase().includes('bank') ? settings?.primaryBank :
     bankChoice === 'secondary' ? settings?.secondaryBank : null
 
   const bankHtml = bank?.bankName ? `
     <div class="bank-box">
-      <div class="bank-box-title">💳 Payment to Bank Account</div>
-      <div class="bank-detail"><b>Bank:</b> ${escapeHtml(bank.bankName)}</div>
+      <div class="bank-box-title">🏛️ Corporate Bank Account Details</div>
+      <div class="bank-detail"><b>Bank Name:</b> ${escapeHtml(bank.bankName)}</div>
       <div class="bank-detail"><b>Account Name:</b> ${escapeHtml(bank.accountName)}</div>
-      <div class="bank-detail"><b>Account No:</b> ${escapeHtml(bank.accountNumber)}</div>
-      <div class="bank-detail"><b>Branch:</b> ${escapeHtml(bank.branchName)}</div>
-      ${bank.routingNumber ? `<div class="bank-detail"><b>Routing:</b> ${escapeHtml(bank.routingNumber)}</div>` : ''}
+      <div class="bank-detail"><b>Account Number:</b> ${escapeHtml(bank.accountNumber)}</div>
+      <div class="bank-detail"><b>Branch Name:</b> ${escapeHtml(bank.branchName)}</div>
+      ${bank.routingNumber ? `<div class="bank-detail"><b>Routing Number:</b> ${escapeHtml(bank.routingNumber)}</div>` : ''}
       ${bank.otherInfo ? `<div class="bank-detail">${escapeHtml(bank.otherInfo)}</div>` : ''}
     </div>` : ''
 
@@ -685,10 +795,39 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
       </div>
     </div>`
 
+  const paymentInfoCard = `
+    <div style="margin: 18px 0; border: 1.5px solid #C9A24B; border-radius: 8px; overflow: hidden; background: #fff;">
+      <div style="background: #faf7f0; padding: 9px 14px; border-bottom: 1px solid #e0d7c2; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-weight: 800; font-size: 11px; color: #785a15; text-transform: uppercase; letter-spacing: 0.5px;">
+          💳 Billing &amp; Payment Settlement Details
+        </span>
+        <span style="font-weight: 800; font-size: 11px; color: ${due <= 0 ? '#166534' : received > 0 ? '#b45309' : '#991b1b'};">
+          ${due <= 0 ? '✓ FULLY PAID' : received > 0 ? `⚡ PARTIAL PAID (DUE: ${money(due, currencySymbol)})` : `⏳ PAYMENT DUE (${money(due, currencySymbol)})`}
+        </span>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 16px; font-size: 11.5px; background: #fff;">
+        <div>
+          <span style="color: #666;">Payment Channel / Method:</span><br/>
+          <strong style="color: #111; font-size: 12.5px;">${escapeHtml(paymentMethod)}</strong>
+        </div>
+        <div>
+          <span style="color: #666;">Receiving Account / Wallet:</span><br/>
+          <strong style="color: #0A0F1C; font-size: 12.5px;">${escapeHtml(accountName)}</strong>
+        </div>
+        ${trxId ? `
+          <div style="grid-column: 1 / -1; padding-top: 6px; border-top: 1px dashed #eee;">
+            <span style="color: #666;">Transaction Reference / TrxID:</span>
+            <strong style="font-family: monospace; color: #166534; margin-left: 6px;">${escapeHtml(trxId)}</strong>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `
+
   const paymentsBreakdownHtml = receipts.length > 0 ? `
     <div style="margin: 20px 0; border: 1px solid #e0d7c2; border-radius: 6px; overflow: hidden;">
       <div style="background: #faf7f0; padding: 8px 12px; font-weight: 700; font-size: 11px; color: #444; border-bottom: 1px solid #e0d7c2; text-transform: uppercase; letter-spacing: 0.5px;">
-        💳 Payment Settlements &amp; Deposit History
+        📜 Payment Deposit &amp; Receipt History
       </div>
       <table style="margin: 0; width: 100%; border-collapse: collapse; font-size: 11px;">
         <thead>
@@ -702,13 +841,13 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
         </thead>
         <tbody>
           ${receipts.map(r => {
-            const { paymentMethod, accountName } = parseReceiptNote(r.note)
+            const { paymentMethod: rcptMethod, accountName: rcptAcc } = parseReceiptNote(r.note)
             return `
               <tr style="border-bottom: 1px solid #eee;">
                 <td style="padding: 6px 10px; font-family: monospace; font-weight: 600;">${escapeHtml(r.id || '—')}</td>
                 <td style="padding: 6px 10px;">${formatDate(r.date)}</td>
-                <td style="padding: 6px 10px;"><b>${escapeHtml(paymentMethod)}</b></td>
-                <td style="padding: 6px 10px;"><b>${escapeHtml(accountName)}</b></td>
+                <td style="padding: 6px 10px;"><b>${escapeHtml(rcptMethod)}</b></td>
+                <td style="padding: 6px 10px;"><b>${escapeHtml(rcptAcc)}</b></td>
                 <td style="padding: 6px 10px; text-align: right; font-weight: 700; font-family: monospace; color: #166534;">
                   ${money(r.amount, currencySymbol)}
                 </td>
@@ -721,7 +860,7 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
   ` : ''
 
   const content = `
-    <div class="doc-title">INVOICE</div>
+    <div class="doc-title">INVOICE / BILL</div>
     <div class="travel-date-banner">✈ TRAVEL DATE: ${formatDate(inv.travel_date)}</div>
     <div class="doc-meta">
       <div class="doc-meta-row"><span class="doc-meta-label">Invoice No:</span><span class="doc-meta-value">${escapeHtml(inv.id)}</span></div>
@@ -754,6 +893,7 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
       <div class="totals-row ${due > 0 ? 'due-row' : 'paid-row'}"><span>${due > 0 ? 'Balance Due' : 'Fully Paid'}</span><span>${money(due, currencySymbol)}</span></div>
     </div>
 
+    ${paymentInfoCard}
     ${paymentsBreakdownHtml}
     ${bankHtml}
     ${signatureHtml}
