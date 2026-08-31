@@ -137,7 +137,22 @@ export default function InvoiceList() {
       if (editingId) {
         const { error } = await supabase.from('invoices').update(payload).eq('id', editingId)
         if (error) throw error
-        success('Invoice updated')
+        
+        // If additional payment entered on edit
+        const addPayment = parseFloat(form.paid_now) || 0
+        if (addPayment > 0) {
+          const rcptConfig = settings?.idSettings?.receipt || idSettings?.receipt
+          const rcptId = await generateId('receipt', 'receipts', rcptConfig)
+          await supabase.from('receipts').insert({
+            id: rcptId,
+            customer_id: form.customer_id,
+            invoice_id: editingId,
+            amount: addPayment,
+            date: form.invoice_date || today(),
+            note: 'Additional payment recorded on invoice update',
+          })
+        }
+        success('Invoice updated' + (addPayment > 0 ? ' and payment recorded' : ''))
       } else {
         const idConfig = settings?.idSettings?.invoice || idSettings?.invoice
         const newId = await generateId('invoice', 'invoices', idConfig)
@@ -154,8 +169,8 @@ export default function InvoiceList() {
             customer_id: form.customer_id,
             invoice_id: newId,
             amount: paidNow,
-            date: form.invoice_date,
-            note: 'Initial payment on invoice creation',
+            date: form.invoice_date || today(),
+            note: 'Paid at invoice creation',
           })
         }
         success(`Invoice ${newId} created`)
@@ -401,12 +416,11 @@ export default function InvoiceList() {
                 <label className="form-label">Discount ({currencySymbol})</label>
                 <input type="number" step="0.01" min="0" className="form-input" value={form.discount} onChange={e => set('discount', e.target.value)} />
               </div>
-              {!editingId && (
-                <div className="form-group">
-                  <label className="form-label">Paid Now ({currencySymbol})</label>
-                  <input type="number" step="0.01" min="0" className="form-input" value={form.paid_now} onChange={e => set('paid_now', e.target.value)} />
-                </div>
-              )}
+              <div className="form-group">
+                <label className="form-label">{editingId ? `Add Payment (${currencySymbol})` : `Paid Now (${currencySymbol})`}</label>
+                <input type="number" step="0.01" min="0" className="form-input" placeholder="0.00" value={form.paid_now} onChange={e => set('paid_now', e.target.value)} />
+                {editingId && <div className="form-hint">Optional: enter an amount to record an additional money receipt.</div>}
+              </div>
             </div>
             <div className="invoice-summary">
               <div className="invoice-summary-row">

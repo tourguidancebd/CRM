@@ -294,13 +294,21 @@ export default function ReceiptList() {
               <select
                 className="form-select"
                 value={form.invoice_id}
-                onChange={e => setForm(f => ({ ...f, invoice_id: e.target.value }))}
+                onChange={e => {
+                  const invId = e.target.value
+                  const chosenInv = customerInvoices.find(i => i.id === invId)
+                  setForm(f => ({
+                    ...f,
+                    invoice_id: invId,
+                    amount: (!f.amount || f.amount === '0') && chosenInv ? String(chosenInv.grand_total) : f.amount
+                  }))
+                }}
                 disabled={!form.customer_id}
               >
                 <option value="">General Payment (Not linked)</option>
                 {customerInvoices.map(inv => (
                   <option key={inv.id} value={inv.id}>
-                    {inv.id} (Total: {money(inv.grand_total, currencySymbol)})
+                    {inv.id} · {formatDate(inv.invoice_date)} · Total: {money(inv.grand_total, currencySymbol)}
                   </option>
                 ))}
               </select>

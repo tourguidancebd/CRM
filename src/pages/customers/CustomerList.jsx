@@ -364,6 +364,19 @@ export default function CustomerList() {
 }
 
 function CustomerDetail({ customer: c }) {
+  const [invoices, setInvoices] = useState([])
+  const [loading, setLoading] = useState(true)
+  const { currencySymbol } = useSettings()
+
+  useEffect(() => {
+    supabase.from('invoices').select('*, receipts(amount)').eq('customer_id', c.id).order('invoice_date', { ascending: false }).then(({ data }) => {
+      setInvoices(data || [])
+      setLoading(false)
+    })
+  }, [c.id])
+
+  const stats = customerStats(invoices, [])
+
   const rows = [
     ['Customer ID', c.id], ['Name', c.name], ['Mobile', c.mobile],
     ['Alt Mobile', c.alt_mobile], ['Email', c.email], ['Gender', c.gender],
@@ -377,14 +390,87 @@ function CustomerDetail({ customer: c }) {
     ['Source', c.source], ['Status', c.status],
     ['Registration Date', formatDate(c.registration_date)], ['Notes', c.notes],
   ]
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px' }}>
-      {rows.filter(([, v]) => v).map(([label, value]) => (
-        <div key={label} style={{ paddingBottom: 8, borderBottom: '1px solid var(--card-border)' }}>
-          <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>{label}</div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{escapeHtml(String(value))}</div>
+    <div>
+      {/* 1. Identity & Contact Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 20 }}>
+        {rows.filter(([, v]) => v).map(([label, value]) => (
+          <div key={label} style={{ paddingBottom: 8, borderBottom: '1px solid var(--card-border)' }}>
+            <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>{label}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{escapeHtml(String(value))}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 2. Customer Aggregate Stats Strip */}
+      <div className="kpi-grid" style={{ marginBottom: 20 }}>
+        <div className="kpi-card teal" style={{ padding: '12px 16px' }}>
+          <div className="kpi-label" style={{ fontSize: '0.65rem' }}>Total Bookings</div>
+          <div className="kpi-value teal" style={{ fontSize: '1.2rem' }}>{stats.totalBooking}</div>
         </div>
-      ))}
+        <div className="kpi-card teal" style={{ padding: '12px 16px' }}>
+          <div className="kpi-label" style={{ fontSize: '0.65rem' }}>Total Sales</div>
+          <div className="kpi-value teal" style={{ fontSize: '1.2rem' }}>{money(stats.totalSales, currencySymbol)}</div>
+        </div>
+        <div className="kpi-card gold" style={{ padding: '12px 16px' }}>
+          <div className="kpi-label" style={{ fontSize: '0.65rem' }}>Total Profit</div>
+          <div className="kpi-value gold" style={{ fontSize: '1.2rem' }}>{money(stats.totalProfit, currencySymbol)}</div>
+        </div>
+        <div className="kpi-card teal" style={{ padding: '12px 16px' }}>
+          <div className="kpi-label" style={{ fontSize: '0.65rem' }}>Total Paid</div>
+          <div className="kpi-value teal" style={{ fontSize: '1.2rem' }}>{money(stats.totalPaid, currencySymbol)}</div>
+        </div>
+        <div className="kpi-card red" style={{ padding: '12px 16px' }}>
+          <div className="kpi-label" style={{ fontSize: '0.65rem' }}>Total Due</div>
+          <div className="kpi-value red" style={{ fontSize: '1.2rem' }}>{money(stats.totalDue, currencySymbol)}</div>
+        </div>
+      </div>
+
+      {/* 3. Purchase & Invoice History */}
+      <div>
+        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 10 }}>
+          Booking & Payment History ({invoices.length})
+        </div>
+        {loading ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '12px 0' }}>Loading history...</div>
+        ) : invoices.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '12px 0' }}>No bookings created yet for this customer.</div>
+        ) : (
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Invoice #</th>
+                  <th>Date</th>
+                  <th>Travel Date</th>
+                  <th className="text-right">Grand Total</th>
+                  <th className="text-right">Paid</th>
+                  <th className="text-right">Due</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map(inv => {
+                  const received = (inv.receipts || []).reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+                  const due = (parseFloat(inv.grand_total) || 0) - received
+                  return (
+                    <tr key={inv.id}>
+                      <td className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{inv.id}</td>
+                      <td>{formatDate(inv.invoice_date)}</td>
+                      <td style={{ color: 'var(--teal)' }}>{formatDate(inv.travel_date)}</td>
+                      <td className="mono text-right">{money(inv.grand_total, currencySymbol)}</td>
+                      <td className="mono text-right" style={{ color: 'var(--teal)' }}>{money(received, currencySymbol)}</td>
+                      <td className="mono text-right" style={{ color: due > 0 ? 'var(--red)' : 'var(--text-muted)' }}>{money(due, currencySymbol)}</td>
+                      <td><StatusPill grandTotal={inv.grand_total} received={received} /></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
