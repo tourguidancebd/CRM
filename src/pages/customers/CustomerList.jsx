@@ -6,12 +6,13 @@ import { Modal } from '../../components/common/Modal'
 import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { EmptyState } from '../../components/common/EmptyState'
-import { ActivePill } from '../../components/common/StatusPill'
+import { ActivePill, StatusPill } from '../../components/common/StatusPill'
 import { useAuth } from '../../contexts/AuthContext'
 import { useSettings } from '../../contexts/SettingsContext'
 import { generateId } from '../../utils/idGenerator'
+import { money } from '../../utils/money'
+import { customerStats } from '../../utils/calculations'
 import { formatDate, today } from '../../utils/dateHelpers'
-import { escapeHtml } from '../../utils/printService'
 
 const INIT_FORM = {
   name: '', mobile: '', alt_mobile: '', email: '', gender: '',
@@ -369,10 +370,18 @@ function CustomerDetail({ customer: c }) {
   const { currencySymbol } = useSettings()
 
   useEffect(() => {
-    supabase.from('invoices').select('*, receipts(amount)').eq('customer_id', c.id).order('created_at', { ascending: false }).then(({ data }) => {
-      setInvoices(data || [])
+    Promise.all([
+      supabase.from('invoices').select('*').eq('customer_id', c.id).order('created_at', { ascending: false }),
+      supabase.from('receipts').select('id, invoice_id, amount').eq('customer_id', c.id)
+    ]).then(([invRes, rcptRes]) => {
+      const allRcpts = rcptRes.data || []
+      const invs = (invRes.data || []).map(inv => ({
+        ...inv,
+        receipts: allRcpts.filter(r => r.invoice_id === inv.id)
+      }))
+      setInvoices(invs)
       setLoading(false)
-    })
+    }).catch(() => setLoading(false))
   }, [c.id])
 
   const stats = customerStats(invoices, [])
@@ -398,7 +407,7 @@ function CustomerDetail({ customer: c }) {
         {rows.filter(([, v]) => v).map(([label, value]) => (
           <div key={label} style={{ paddingBottom: 8, borderBottom: '1px solid var(--card-border)' }}>
             <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', fontWeight: 600, marginBottom: 2 }}>{label}</div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{escapeHtml(String(value))}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>{String(value)}</div>
           </div>
         ))}
       </div>
