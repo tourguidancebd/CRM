@@ -135,17 +135,32 @@ export function buildUnifiedTransactions({
     })
   })
 
-  // 3. Vendor Payments (Money Out)
+  // 3. Vendor Payments (Outflow / Credit Asset)
   vendorPayments.forEach(vp => {
-    const accId = vp.account_id || 'acc-bank-islami'
-    const acc = accounts.find(a => a.id === accId) || accounts[0]
+    let matchedAcc = null
+    let cleanDesc = vp.note || 'Vendor payment settlement'
+    if (vp.note) {
+      const match = vp.note.match(/^\[Paid From:\s*([^\]]+)\]\s*([\s\S]*)$/)
+      if (match) {
+        const parsedName = match[1].trim().toLowerCase()
+        cleanDesc = match[2].trim() || 'Vendor payment settlement'
+        matchedAcc = accounts.find(a => a.name.toLowerCase() === parsedName || a.id.toLowerCase() === parsedName || a.name.toLowerCase().includes(parsedName))
+      }
+    }
+    if (!matchedAcc && vp.account_id) {
+      matchedAcc = accounts.find(a => a.id === vp.account_id)
+    }
+    const acc = matchedAcc || accounts[0]
+    const accId = acc?.id || 'acc-main-cash'
+    const accName = acc?.name || 'Main Office Cash Vault'
+
     list.push({
       id: vp.id,
       date: vp.date || today(),
       type: 'Payment',
       category: 'Supplier Disbursement',
-      accountId: acc?.id || 'acc-bank-islami',
-      accountName: acc?.name || 'Bank Account',
+      accountId: accId,
+      accountName: accName,
       accountType: acc?.type || 'bank',
       entityName: vp.vendors?.name || 'Vendor',
       entityType: 'Vendor',
@@ -154,7 +169,7 @@ export function buildUnifiedTransactions({
       amount: parseFloat(vp.amount) || 0,
       paymentMethod: 'Bank Transfer / Cash',
       reference: `VP: ${vp.id}`,
-      description: vp.note || 'Vendor payment settlement',
+      description: cleanDesc,
       source: 'vendor_payments',
       raw: vp
     })

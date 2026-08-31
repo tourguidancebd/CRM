@@ -12,10 +12,20 @@ import { money } from '../../utils/money'
 import { formatDate, today } from '../../utils/dateHelpers'
 import { printHtml, downloadHtml, buildLetterheadDoc, escapeHtml } from '../../utils/printService'
 
+export function parsePaymentNote(note) {
+  if (!note) return { accountName: 'Main Office Cash Vault', cleanNote: '' }
+  const match = note.match(/^\[Paid From:\s*([^\]]+)\]\s*([\s\S]*)$/)
+  if (match) {
+    return { accountName: match[1].trim(), cleanNote: match[2].trim() }
+  }
+  return { accountName: 'Cash / Bank', cleanNote: note }
+}
+
 export default function VendorPayments() {
   const [tab, setTab] = useState('payments') // 'payments' | 'vendors'
   const [vendors, setVendors] = useState([])
   const [payments, setPayments] = useState([])
+  const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
@@ -26,7 +36,8 @@ export default function VendorPayments() {
     vendor_id: '',
     amount: '',
     date: today(),
-    note: ''
+    account_name: 'Main Office Cash Vault',
+    custom_note: ''
   })
   const [savingPayment, setSavingPayment] = useState(false)
   const [deletePaymentTarget, setDeletePaymentTarget] = useState(null)
@@ -49,9 +60,10 @@ export default function VendorPayments() {
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    const [vRes, pRes] = await Promise.all([
+    const [vRes, pRes, sRes] = await Promise.all([
       supabase.from('vendors').select('*').order('name'),
-      supabase.from('vendor_payments').select('*, vendors(id, name, phone)').order('date', { ascending: false })
+      supabase.from('vendor_payments').select('*, vendors(id, name, phone)').order('date', { ascending: false }),
+      supabase.from('settings').select('*').eq('id', 1).single()
     ])
 
     if (vRes.error) toastError('Error loading vendors: ' + vRes.error.message)
@@ -59,6 +71,9 @@ export default function VendorPayments() {
 
     if (pRes.error) toastError('Error loading payments: ' + pRes.error.message)
     else setPayments(pRes.data || [])
+
+    const accs = sRes.data?.data?.accountsData?.accounts || []
+    setAccounts(accs)
 
     setLoading(false)
   }, [toastError])
@@ -69,22 +84,26 @@ export default function VendorPayments() {
 
   // --- Payment Actions ---
   const openCreatePayment = () => {
+    const defaultAcc = accounts[0]?.name || 'Main Office Cash Vault'
     setPaymentForm({
       vendor_id: vendors[0]?.id || '',
       amount: '',
       date: today(),
-      note: ''
+      account_name: defaultAcc,
+      custom_note: ''
     })
     setEditingPaymentId(null)
     setPaymentModalOpen(true)
   }
 
   const openEditPayment = (p) => {
+    const { accountName, cleanNote } = parsePaymentNote(p.note)
     setPaymentForm({
       vendor_id: p.vendor_id || '',
       amount: p.amount || '',
       date: p.date || today(),
-      note: p.note || ''
+      account_name: accountName || accounts[0]?.name || 'Main Office Cash Vault',
+      custom_note: cleanNote || ''
     })
     setEditingPaymentId(p.id)
     setPaymentModalOpen(true)
@@ -100,14 +119,20 @@ export default function VendorPayments() {
       toastError('Amount must be greater than 0')
       return
     }
+    if (!paymentForm.account_name) {
+      toastError('Please specify which account you are paying from')
+      return
+    }
 
     setSavingPayment(true)
     try {
+      const formattedNote = `[Paid From: ${paymentForm.account_name}] ${paymentForm.custom_note.trim()}`
+
       const payload = {
         vendor_id: paymentForm.vendor_id,
         amount: parseFloat(paymentForm.amount),
         date: paymentForm.date,
-        note: paymentForm.note || null
+        note: formattedNote
       }
 
       if (editingPaymentId) {
@@ -117,7 +142,7 @@ export default function VendorPayments() {
       } else {
         const { error } = await supabase.from('vendor_payments').insert({ ...payload, id: uid() })
         if (error) throw error
-        success('Vendor payment recorded')
+        success(`Vendor payment of ${money(payload.amount, currencySymbol)} recorded from ${paymentForm.account_name}`)
       }
 
       setPaymentModalOpen(false)
@@ -318,40 +343,53 @@ export default function VendorPayments() {
                     <th>Date</th>
                     <th>Vendor Name</th>
                     <th>Phone</th>
+                    <th>Paid From Account</th>
                     <th className="text-right">Amount Paid</th>
                     <th>Purpose / Note</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPayments.map(p => (
-                    <tr key={p.id}>
-                      <td>{formatDate(p.date)}</td>
-                      <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{p.vendors?.name || '—'}</td>
-                      <td className="mono">{p.vendors?.phone || '—'}</td>
-                      <td className="mono text-right" style={{ color: 'var(--gold)', fontWeight: 600 }}>
-                        {money(p.amount, currencySymbol)}
-                      </td>
-                      <td style={{ color: 'var(--text-secondary)', maxWidth: 220 }} className="truncate" title={p.note || ''}>
-                        {p.note || '—'}
-                      </td>
-                      <td>
-                        <div className="actions-col">
-                          <button className="btn btn-teal btn-sm btn-icon" onClick={() => handlePrintSingle(p)} title="Print Voucher">
-                            <PrintIcon />
-                          </button>
-                          <button className="btn btn-secondary btn-sm btn-icon" onClick={() => openEditPayment(p)} title="Edit">
-                            <EditIcon />
-                          </button>
-                          <button className="btn btn-danger btn-sm btn-icon" onClick={() => setDeletePaymentTarget(p)} title="Delete">
-                            <TrashIcon />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredPayments.map(p => {
+                    const { accountName, cleanNote } = parsePaymentNote(p.note)
+                    const isBank = accountName.toLowerCase().includes('bank')
+                    const isCash = accountName.toLowerCase().includes('cash') || accountName.toLowerCase().includes('vault')
+
+                    return (
+                      <tr key={p.id}>
+                        <td>{formatDate(p.date)}</td>
+                        <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{p.vendors?.name || '—'}</td>
+                        <td className="mono">{p.vendors?.phone || '—'}</td>
+                        <td>
+                          <span className={`pill ${isBank ? 'pill-gold' : isCash ? 'pill-paid' : 'pill-partial'}`}>
+                            {isBank ? '🏛️ ' : isCash ? '💵 ' : '📱 '}
+                            {accountName}
+                          </span>
+                        </td>
+                        <td className="mono text-right" style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                          {money(p.amount, currencySymbol)}
+                        </td>
+                        <td style={{ color: 'var(--text-secondary)', maxWidth: 200 }} className="truncate" title={cleanNote || p.note || ''}>
+                          {cleanNote || p.note || '—'}
+                        </td>
+                        <td>
+                          <div className="actions-col">
+                            <button className="btn btn-teal btn-sm btn-icon" onClick={() => handlePrintSingle(p)} title="Print Voucher">
+                              <PrintIcon />
+                            </button>
+                            <button className="btn btn-secondary btn-sm btn-icon" onClick={() => openEditPayment(p)} title="Edit">
+                              <EditIcon />
+                            </button>
+                            <button className="btn btn-danger btn-sm btn-icon" onClick={() => setDeletePaymentTarget(p)} title="Delete">
+                              <TrashIcon />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                   <tr className="table-grand-total">
-                    <td colSpan="3">GRAND TOTAL (All Vendor Payments)</td>
+                    <td colSpan="4">GRAND TOTAL (All Vendor Payments)</td>
                     <td className="mono text-right">{money(totalPaid, currencySymbol)}</td>
                     <td colSpan="2"></td>
                   </tr>
@@ -410,7 +448,7 @@ export default function VendorPayments() {
         isOpen={paymentModalOpen}
         onClose={() => setPaymentModalOpen(false)}
         title={editingPaymentId ? 'Edit Vendor Payment' : 'Record Vendor Payment'}
-        size="sm"
+        size="md"
         footer={
           <>
             <button className="btn btn-ghost" onClick={() => setPaymentModalOpen(false)} disabled={savingPayment}>
@@ -424,7 +462,7 @@ export default function VendorPayments() {
       >
         <form onSubmit={handleSavePayment}>
           <div className="form-group">
-            <label className="form-label required">Vendor</label>
+            <label className="form-label required">Vendor / Supplier</label>
             <select
               className="form-select"
               value={paymentForm.vendor_id}
@@ -441,28 +479,59 @@ export default function VendorPayments() {
           </div>
 
           <div className="form-group">
-            <label className="form-label required">Payment Date</label>
-            <input
-              type="date"
-              className="form-input"
-              value={paymentForm.date}
-              onChange={e => setPaymentForm(f => ({ ...f, date: e.target.value }))}
+            <label className="form-label required">Paid From (Disbursement Account / Wallet)</label>
+            <select
+              className="form-select"
+              value={paymentForm.account_name}
+              onChange={e => setPaymentForm(f => ({ ...f, account_name: e.target.value }))}
               required
-            />
+            >
+              {accounts.length > 0 ? (
+                accounts.map(a => (
+                  <option key={a.id} value={a.name}>
+                    {a.type === 'bank' ? '🏛️ Bank: ' : a.type === 'cash' ? '💵 Cash: ' : '📱 Mobile: '}
+                    {a.name} ({money(a.currentBalance, currencySymbol)})
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="Main Office Cash Vault">💵 Main Office Cash Vault</option>
+                  <option value="Islami Bank Bangladesh Ltd">🏛️ Islami Bank Bangladesh Ltd</option>
+                  <option value="The City Bank Limited">🏛️ The City Bank Limited</option>
+                  <option value="bKash Merchant Account">📱 bKash Merchant Account</option>
+                  <option value="Nagad Business Account">📱 Nagad Business Account</option>
+                  <option value="Petty Cash">💵 Petty Cash</option>
+                </>
+              )}
+            </select>
           </div>
 
-          <div className="form-group">
-            <label className="form-label required">Amount ({currencySymbol})</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              className="form-input"
-              placeholder="0.00"
-              value={paymentForm.amount}
-              onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
-              required
-            />
+          <div className="form-grid form-grid-2">
+            <div className="form-group">
+              <label className="form-label required">Payment Date</label>
+              <input
+                type="date"
+                className="form-input"
+                value={paymentForm.date}
+                onChange={e => setPaymentForm(f => ({ ...f, date: e.target.value }))}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label required">Amount Disbursed ({currencySymbol})</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                className="form-input"
+                style={{ fontWeight: 700, color: 'var(--gold)' }}
+                placeholder="0.00"
+                value={paymentForm.amount}
+                onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))}
+                required
+              />
+            </div>
           </div>
 
           <div className="form-group">
@@ -470,9 +539,9 @@ export default function VendorPayments() {
             <textarea
               className="form-textarea"
               placeholder="e.g. Hotel advance booking for Cox's Bazar tour group"
-              value={paymentForm.note}
-              onChange={e => setPaymentForm(f => ({ ...f, note: e.target.value }))}
-              rows={3}
+              value={paymentForm.custom_note}
+              onChange={e => setPaymentForm(f => ({ ...f, custom_note: e.target.value }))}
+              rows={2}
             />
           </div>
         </form>
@@ -554,6 +623,8 @@ export default function VendorPayments() {
 }
 
 function buildSingleVoucherHtml(p, settings, currencySymbol) {
+  const { accountName, cleanNote } = parsePaymentNote(p.note)
+
   const content = `
     <div class="doc-title">VENDOR PAYMENT VOUCHER</div>
     <div style="text-align: center; color: #666; font-size: 11px; margin-bottom: 16px;">Disbursement & Supplier Remittance</div>
@@ -562,7 +633,8 @@ function buildSingleVoucherHtml(p, settings, currencySymbol) {
       <div class="doc-meta-row"><span class="doc-meta-label">Payment Date:</span><span class="doc-meta-value">${formatDate(p.date)}</span></div>
       <div class="doc-meta-row"><span class="doc-meta-label">Paid To (Vendor):</span><span class="doc-meta-value">${escapeHtml(p.vendors?.name || '—')}</span></div>
       <div class="doc-meta-row"><span class="doc-meta-label">Vendor Phone:</span><span class="doc-meta-value">${escapeHtml(p.vendors?.phone || '—')}</span></div>
-      <div class="doc-meta-row"><span class="doc-meta-label">Payment Purpose:</span><span class="doc-meta-value">${escapeHtml(p.note || 'Service Disbursement')}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label">Paid From (Account):</span><span class="doc-meta-value" style="font-weight: 700; color: #0A0F1C;">${escapeHtml(accountName)}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label">Payment Purpose:</span><span class="doc-meta-value">${escapeHtml(cleanNote || 'Supplier Disbursement')}</span></div>
     </div>
 
     <div style="margin: 24px 0; padding: 20px; background: #fdfaf2; border: 2px solid #C9A24B; border-radius: 8px; text-align: center;">
@@ -603,23 +675,28 @@ function buildFullPaymentSheetHtml(payments, settings, currencySymbol) {
           <th>Payment Date</th>
           <th>Vendor Name</th>
           <th>Contact Phone</th>
+          <th>Paid From Account</th>
           <th>Purpose / Remarks</th>
           <th class="amount-col">Amount</th>
         </tr>
       </thead>
       <tbody>
-        ${payments.map((p, idx) => `
-          <tr>
-            <td>${idx + 1}</td>
-            <td>${formatDate(p.date)}</td>
-            <td><b>${escapeHtml(p.vendors?.name || '—')}</b></td>
-            <td>${escapeHtml(p.vendors?.phone || '—')}</td>
-            <td>${escapeHtml(p.note || '—')}</td>
-            <td class="amount-col">${money(p.amount, currencySymbol)}</td>
-          </tr>
-        `).join('')}
+        ${payments.map((p, idx) => {
+          const { accountName, cleanNote } = parsePaymentNote(p.note)
+          return `
+            <tr>
+              <td>${idx + 1}</td>
+              <td>${formatDate(p.date)}</td>
+              <td><b>${escapeHtml(p.vendors?.name || '—')}</b></td>
+              <td>${escapeHtml(p.vendors?.phone || '—')}</td>
+              <td><b>${escapeHtml(accountName)}</b></td>
+              <td>${escapeHtml(cleanNote || '—')}</td>
+              <td class="amount-col">${money(p.amount, currencySymbol)}</td>
+            </tr>
+          `
+        }).join('')}
         <tr class="grand-total-row">
-          <td colspan="5">GRAND TOTAL DISBURSED</td>
+          <td colspan="6">GRAND TOTAL DISBURSED</td>
           <td class="amount-col">${money(total, currencySymbol)}</td>
         </tr>
       </tbody>
