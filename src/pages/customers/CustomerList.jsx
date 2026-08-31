@@ -175,7 +175,7 @@ export default function CustomerList() {
                 {filtered.map(c => (
                   <tr key={c.id}>
                     <td className="mono" style={{ color: 'var(--gold)' }}>{c.id}</td>
-                    <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{escapeHtml(c.name)}</td>
+                    <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{c.name}</td>
                     <td className="mono">{c.mobile}</td>
                     <td style={{ color: 'var(--text-muted)' }}>{c.email || '—'}</td>
                     <td><span className="pill pill-gold">{c.customer_type || 'Individual'}</span></td>
