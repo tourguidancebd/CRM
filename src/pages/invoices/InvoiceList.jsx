@@ -16,10 +16,19 @@ import { printHtml, downloadHtml, buildLetterheadDoc, escapeHtml, parseReceiptNo
 
 const EMPTY_LINE = () => ({ item_id: '', name: '', qty: 1, price: '', buying_price: 0 })
 
+function getMethodFromAccount(accountName = '') {
+  const name = String(accountName).toLowerCase()
+  if (name.includes('bkash')) return 'bKash'
+  if (name.includes('nagad')) return 'Nagad'
+  if (name.includes('rocket')) return 'Rocket'
+  if (name.includes('bank') || name.includes('islami') || name.includes('city') || name.includes('ebl') || name.includes('dbbl')) return 'Bank Transfer'
+  if (name.includes('cash') || name.includes('vault')) return 'Cash'
+  return 'Bank / Digital'
+}
+
 const INIT_FORM = {
   customer_id: '', sales_by: '', invoice_date: today(), travel_date: '',
   num_travelers: 1, discount: 0, paid_now: 0, bank_account: 'primary',
-  payment_method: 'bKash',
   account_name: 'bKash Merchant Account',
   payment_reference: '',
   items: [EMPTY_LINE()],
@@ -76,14 +85,13 @@ export default function InvoiceList() {
   useEffect(() => { load() }, [load])
 
   const openCreate = (prefillCustomer = null) => {
-    const bkashAcc = accounts.find(a => a.name.toLowerCase().includes('bkash'))?.name || accounts[0]?.name || 'bKash Merchant Account'
+    const defaultAcc = accounts.find(a => a.name.toLowerCase().includes('bkash'))?.name || accounts[0]?.name || 'bKash Merchant Account'
     setForm({
       ...INIT_FORM,
       customer_id: prefillCustomer?.id || '',
       items: [EMPTY_LINE()],
       invoice_date: today(),
-      payment_method: 'bKash',
-      account_name: bkashAcc,
+      account_name: defaultAcc,
       payment_reference: '',
     })
     setEditingId(null)
@@ -105,7 +113,6 @@ export default function InvoiceList() {
       num_travelers: invData.travelers || invData.num_travelers || 1,
       discount: invData.discount || 0,
       paid_now: 0, // Don't re-apply past payment
-      payment_method: parsed.paymentMethod || 'bKash',
       account_name: parsed.accountName || defaultAcc,
       payment_reference: parsed.trxId || '',
       bank_account: invData.bank_choice?.toLowerCase().includes('bank') ? 'primary' : 'none',
@@ -113,24 +120,6 @@ export default function InvoiceList() {
     })
     setEditingId(inv.id)
     setModalOpen(true)
-  }
-
-  const handlePaymentMethodChange = (newMethod) => {
-    let newAcc = form.account_name
-    if (newMethod === 'bKash') {
-      const match = accounts.find(a => a.name.toLowerCase().includes('bkash'))
-      newAcc = match ? match.name : 'bKash Merchant Account'
-    } else if (newMethod === 'Nagad') {
-      const match = accounts.find(a => a.name.toLowerCase().includes('nagad'))
-      newAcc = match ? match.name : 'Nagad Business Account'
-    } else if (newMethod === 'Bank Transfer') {
-      const match = accounts.find(a => a.type === 'bank' || a.name.toLowerCase().includes('bank'))
-      newAcc = match ? match.name : 'Islami Bank Bangladesh Ltd'
-    } else if (newMethod === 'Cash') {
-      const match = accounts.find(a => a.type === 'cash' || a.name.toLowerCase().includes('cash') || a.name.toLowerCase().includes('vault'))
-      newAcc = match ? match.name : 'Main Office Cash Vault'
-    }
-    setForm(f => ({ ...f, payment_method: newMethod, account_name: newAcc }))
   }
 
   // Line item helpers
@@ -168,7 +157,8 @@ export default function InvoiceList() {
 
     setSaving(true)
     try {
-      const paymentTag = `[Paid Via: ${form.payment_method || 'bKash'}] [Received To: ${form.account_name || 'bKash Merchant Account'}]${form.payment_reference ? ` [TrxID: ${form.payment_reference.trim()}]` : ''}`
+      const derivedMethod = getMethodFromAccount(form.account_name)
+      const paymentTag = `[Paid Via: ${derivedMethod}] [Received To: ${form.account_name || 'Main Office Cash Vault'}]${form.payment_reference ? ` [TrxID: ${form.payment_reference.trim()}]` : ''}`
       const payload = {
         customer_id: form.customer_id,
         sales_by_id: form.sales_by || null,
@@ -228,7 +218,7 @@ export default function InvoiceList() {
             note: paymentNote,
           })
         }
-        success(`Invoice ${newId} created with payment to ${form.account_name}`)
+        success(`Invoice ${newId} created`)
       }
       setModalOpen(false)
       load()
@@ -313,7 +303,7 @@ export default function InvoiceList() {
                 <tr>
                   <th>Invoice #</th><th>Date</th><th>Travel Date</th>
                   <th>Customer</th><th>Phone</th>
-                  <th>Payment Channel</th>
+                  <th>Receiving Account</th>
                   <th className="text-right">Total</th><th className="text-right">Paid</th><th className="text-right">Due</th>
                   <th>Sales By</th><th>Status</th><th>Actions</th>
                 </tr>
@@ -324,9 +314,9 @@ export default function InvoiceList() {
                   const due = (parseFloat(inv.grand_total) || 0) - received
                   const latestReceipt = (inv.receipts || []).slice(-1)[0]
                   const parsed = latestReceipt ? parseReceiptNote(latestReceipt.note) : parseReceiptNote(inv.bank_choice)
-                  const isBkash = parsed.paymentMethod.toLowerCase().includes('bkash') || parsed.accountName.toLowerCase().includes('bkash')
-                  const isBank = parsed.paymentMethod.toLowerCase().includes('bank') || parsed.accountName.toLowerCase().includes('bank')
-                  const isCash = parsed.paymentMethod.toLowerCase().includes('cash') || parsed.accountName.toLowerCase().includes('vault')
+                  const isBkash = parsed.accountName.toLowerCase().includes('bkash')
+                  const isBank = parsed.accountName.toLowerCase().includes('bank')
+                  const isCash = parsed.accountName.toLowerCase().includes('cash') || parsed.accountName.toLowerCase().includes('vault')
 
                   return (
                     <tr key={inv.id}>
@@ -336,15 +326,10 @@ export default function InvoiceList() {
                       <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{inv.customers?.name || '—'}</td>
                       <td className="mono">{inv.customers?.mobile || '—'}</td>
                       <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span className={`pill ${isBkash ? 'pill-partial' : isBank ? 'pill-gold' : isCash ? 'pill-paid' : 'pill-gold'}`} style={{ fontSize: '0.72rem' }}>
-                            {isBkash ? '📱 ' : isBank ? '🏛️ ' : isCash ? '💵 ' : '💳 '}
-                            {parsed.paymentMethod}
-                          </span>
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }} className="truncate" title={parsed.accountName}>
-                            {parsed.accountName}
-                          </span>
-                        </div>
+                        <span className={`pill ${isBkash ? 'pill-partial' : isBank ? 'pill-gold' : isCash ? 'pill-paid' : 'pill-gold'}`} style={{ fontSize: '0.74rem' }}>
+                          {isBkash ? '📱 ' : isBank ? '🏛️ ' : isCash ? '💵 ' : '🏦 '}
+                          {parsed.accountName || 'bKash Merchant Account'}
+                        </span>
                       </td>
                       <td className="mono text-right">{money(inv.grand_total, currencySymbol)}</td>
                       <td className="mono text-right" style={{ color: 'var(--teal)' }}>{money(received, currencySymbol)}</td>
@@ -474,7 +459,7 @@ export default function InvoiceList() {
             <PlusIcon /> Add Line Item
           </button>
 
-          {/* Customer Payment & Settlement Dropdowns (Bank / bKash / Cash) */}
+          {/* Customer Bank / bKash Receiving Account Configuration */}
           <div style={{
             background: 'rgba(201,162,75,0.06)',
             border: '1px solid rgba(201,162,75,0.3)',
@@ -484,59 +469,39 @@ export default function InvoiceList() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                💳 Customer Payment Method &amp; Bank / bKash Account
+                💳 Receiving Account (Bank / bKash / Cash)
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Select how the customer pays or which account to mention on the bill
+                Select the bank or mobile banking account where money will be received
               </div>
             </div>
 
-            <div className="form-grid form-grid-2">
-              <div className="form-group" style={{ marginBottom: 12 }}>
-                <label className="form-label required">Payment Method / Channel (Paid Via)</label>
-                <select
-                  className="form-select"
-                  value={form.payment_method}
-                  onChange={e => handlePaymentMethodChange(e.target.value)}
-                  style={{ fontWeight: 600 }}
-                >
-                  <option value="bKash">📱 bKash (Mobile Banking)</option>
-                  <option value="Bank Transfer">🏛️ Bank Transfer / Deposit</option>
-                  <option value="Nagad">📱 Nagad (Mobile Banking)</option>
-                  <option value="Cash">💵 Cash in Hand</option>
-                  <option value="Rocket">📱 Rocket (DBBL)</option>
-                  <option value="Credit Card">💳 Credit / Debit Card</option>
-                  <option value="Cheque">📜 Cheque</option>
-                </select>
-              </div>
-
-              <div className="form-group" style={{ marginBottom: 12 }}>
-                <label className="form-label required">Receiving Account / Wallet / Number</label>
-                <select
-                  className="form-select"
-                  value={form.account_name}
-                  onChange={e => set('account_name', e.target.value)}
-                  style={{ fontWeight: 600 }}
-                >
-                  {accounts.length > 0 ? (
-                    accounts.map(a => (
-                      <option key={a.id} value={a.name}>
-                        {a.type === 'bank' ? '🏛️ Bank: ' : a.type === 'cash' ? '💵 Cash: ' : '📱 Mobile: '}
-                        {a.name} ({money(a.currentBalance, currencySymbol)})
-                      </option>
-                    ))
-                  ) : (
-                    <>
-                      <option value="bKash Merchant Account">📱 bKash Merchant Account</option>
-                      <option value="bKash Personal / Agent">📱 bKash Personal / Agent</option>
-                      <option value="Islami Bank Bangladesh Ltd">🏛️ Islami Bank Bangladesh Ltd</option>
-                      <option value="The City Bank Limited">🏛️ The City Bank Limited</option>
-                      <option value="Main Office Cash Vault">💵 Main Office Cash Vault</option>
-                      <option value="Nagad Business Account">📱 Nagad Business Account</option>
-                    </>
-                  )}
-                </select>
-              </div>
+            <div className="form-group" style={{ marginBottom: 12 }}>
+              <label className="form-label required">Select Bank / bKash Account</label>
+              <select
+                className="form-select"
+                value={form.account_name}
+                onChange={e => set('account_name', e.target.value)}
+                style={{ fontWeight: 600, fontSize: '0.88rem' }}
+              >
+                {accounts.length > 0 ? (
+                  accounts.map(a => (
+                    <option key={a.id} value={a.name}>
+                      {a.type === 'bank' ? '🏛️ Bank: ' : a.type === 'cash' ? '💵 Cash: ' : '📱 Mobile: '}
+                      {a.name} ({money(a.currentBalance, currencySymbol)})
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="bKash Merchant Account">📱 bKash Merchant Account</option>
+                    <option value="bKash Personal / Agent">📱 bKash Personal / Agent</option>
+                    <option value="Islami Bank Bangladesh Ltd">🏛️ Islami Bank Bangladesh Ltd</option>
+                    <option value="The City Bank Limited">🏛️ The City Bank Limited</option>
+                    <option value="Main Office Cash Vault">💵 Main Office Cash Vault</option>
+                    <option value="Nagad Business Account">📱 Nagad Business Account</option>
+                  </>
+                )}
+              </select>
             </div>
 
             <div className="form-grid form-grid-2">
@@ -585,11 +550,11 @@ export default function InvoiceList() {
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Payment TrxID / Reference / Cheque #</label>
+                <label className="form-label">Payment TrxID / Reference / Note</label>
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g. bKash TrxID: 9X87KL or Cheque #01923"
+                  placeholder="e.g. TrxID: 9X87KL or Cheque #01923"
                   value={form.payment_reference || ''}
                   onChange={e => set('payment_reference', e.target.value)}
                 />
@@ -799,23 +764,19 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
     <div style="margin: 18px 0; border: 1.5px solid #C9A24B; border-radius: 8px; overflow: hidden; background: #fff;">
       <div style="background: #faf7f0; padding: 9px 14px; border-bottom: 1px solid #e0d7c2; display: flex; justify-content: space-between; align-items: center;">
         <span style="font-weight: 800; font-size: 11px; color: #785a15; text-transform: uppercase; letter-spacing: 0.5px;">
-          💳 Billing &amp; Payment Settlement Details
+          💳 Billing &amp; Settlement Account
         </span>
         <span style="font-weight: 800; font-size: 11px; color: ${due <= 0 ? '#166534' : received > 0 ? '#b45309' : '#991b1b'};">
           ${due <= 0 ? '✓ FULLY PAID' : received > 0 ? `⚡ PARTIAL PAID (DUE: ${money(due, currencySymbol)})` : `⏳ PAYMENT DUE (${money(due, currencySymbol)})`}
         </span>
       </div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 16px; font-size: 11.5px; background: #fff;">
-        <div>
-          <span style="color: #666;">Payment Channel / Method:</span><br/>
-          <strong style="color: #111; font-size: 12.5px;">${escapeHtml(paymentMethod)}</strong>
-        </div>
-        <div>
-          <span style="color: #666;">Receiving Account / Wallet:</span><br/>
-          <strong style="color: #0A0F1C; font-size: 12.5px;">${escapeHtml(accountName)}</strong>
+      <div style="padding: 12px 16px; font-size: 11.5px; background: #fff;">
+        <div style="margin-bottom: ${trxId ? '8px' : '0'};">
+          <span style="color: #666;">Payment Received To / Account:</span>
+          <strong style="color: #0A0F1C; font-size: 13px; margin-left: 8px;">${escapeHtml(accountName)}</strong>
         </div>
         ${trxId ? `
-          <div style="grid-column: 1 / -1; padding-top: 6px; border-top: 1px dashed #eee;">
+          <div style="padding-top: 6px; border-top: 1px dashed #eee;">
             <span style="color: #666;">Transaction Reference / TrxID:</span>
             <strong style="font-family: monospace; color: #166534; margin-left: 6px;">${escapeHtml(trxId)}</strong>
           </div>
@@ -834,19 +795,17 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
           <tr style="background: #fdfaf2; color: #555; text-align: left;">
             <th style="padding: 6px 10px;">Receipt #</th>
             <th style="padding: 6px 10px;">Payment Date</th>
-            <th style="padding: 6px 10px;">Paid Via (Method)</th>
             <th style="padding: 6px 10px;">Received Into Account</th>
             <th style="padding: 6px 10px; text-align: right;">Amount Paid</th>
           </tr>
         </thead>
         <tbody>
           ${receipts.map(r => {
-            const { paymentMethod: rcptMethod, accountName: rcptAcc } = parseReceiptNote(r.note)
+            const { accountName: rcptAcc } = parseReceiptNote(r.note)
             return `
               <tr style="border-bottom: 1px solid #eee;">
                 <td style="padding: 6px 10px; font-family: monospace; font-weight: 600;">${escapeHtml(r.id || '—')}</td>
                 <td style="padding: 6px 10px;">${formatDate(r.date)}</td>
-                <td style="padding: 6px 10px;"><b>${escapeHtml(rcptMethod)}</b></td>
                 <td style="padding: 6px 10px;"><b>${escapeHtml(rcptAcc)}</b></td>
                 <td style="padding: 6px 10px; text-align: right; font-weight: 700; font-family: monospace; color: #166534;">
                   ${money(r.amount, currencySymbol)}
