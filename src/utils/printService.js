@@ -3,6 +3,27 @@
  * Avoids popup blocker issues entirely.
  */
 
+export function parseReceiptNote(note) {
+  if (!note) return { paymentMethod: 'Cash', accountName: 'Main Office Cash Vault', cleanNote: '' }
+  let paymentMethod = 'Cash'
+  let accountName = 'Main Office Cash Vault'
+  let cleanNote = String(note)
+
+  const methodMatch = cleanNote.match(/\[Paid Via:\s*([^\]]+)\]/)
+  if (methodMatch) {
+    paymentMethod = methodMatch[1].trim()
+    cleanNote = cleanNote.replace(/\[Paid Via:\s*([^\]]+)\]/, '').trim()
+  }
+
+  const accMatch = cleanNote.match(/\[Received To:\s*([^\]]+)\]/)
+  if (accMatch) {
+    accountName = accMatch[1].trim()
+    cleanNote = cleanNote.replace(/\[Received To:\s*([^\]]+)\]/, '').trim()
+  }
+
+  return { paymentMethod, accountName, cleanNote }
+}
+
 /**
  * Print an HTML string using a hidden iframe.
  * @param {string} htmlContent - Complete HTML document string

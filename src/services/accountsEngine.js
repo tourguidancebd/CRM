@@ -85,26 +85,45 @@ export function buildUnifiedTransactions({
 }) {
   const list = []
 
-  // 1. Receipts (Money In)
+  // 1. Receipts (Money In / Debit Asset / Credit Revenue or A/R)
   receipts.forEach(r => {
-    const accId = r.account_id || (r.note?.toLowerCase().includes('bkash') ? 'acc-mobile-bkash' : r.note?.toLowerCase().includes('nagad') ? 'acc-mobile-nagad' : r.note?.toLowerCase().includes('bank') ? 'acc-bank-islami' : 'acc-cash-main')
-    const acc = accounts.find(a => a.id === accId) || accounts[0]
+    let matchedAcc = null
+    let method = 'Cash'
+    let cleanDesc = r.note || 'Customer payment received'
+
+    if (r.note) {
+      const methodMatch = r.note.match(/\[Paid Via:\s*([^\]]+)\]/)
+      if (methodMatch) method = methodMatch[1].trim()
+
+      const accMatch = r.note.match(/\[Received To:\s*([^\]]+)\]/)
+      if (accMatch) {
+        const parsedName = accMatch[1].trim().toLowerCase()
+        matchedAcc = accounts.find(a => a.name.toLowerCase() === parsedName || a.id.toLowerCase() === parsedName || a.name.toLowerCase().includes(parsedName))
+      }
+    }
+    if (!matchedAcc && r.account_id) {
+      matchedAcc = accounts.find(a => a.id === r.account_id)
+    }
+    const acc = matchedAcc || accounts[0]
+    const accId = acc?.id || 'acc-cash-main'
+    const accName = acc?.name || 'Main Office Cash Vault'
+
     list.push({
       id: r.id,
       date: r.date || today(),
       type: 'Income',
       category: 'Customer Collection',
-      accountId: acc?.id || 'acc-cash-main',
-      accountName: acc?.name || 'Cash Vault',
+      accountId: accId,
+      accountName: accName,
       accountType: acc?.type || 'cash',
       entityName: r.customers?.name || 'Customer',
       entityType: 'Customer',
       debit: parseFloat(r.amount) || 0, // Asset increases
       credit: 0,
       amount: parseFloat(r.amount) || 0,
-      paymentMethod: r.note?.includes('bKash') ? 'bKash' : r.note?.includes('Nagad') ? 'Nagad' : r.note?.includes('Bank') ? 'Bank Transfer' : 'Cash',
+      paymentMethod: method,
       reference: r.invoice_id ? `Invoice: ${r.invoice_id}` : 'Direct Receipt',
-      description: r.note || 'Customer payment received',
+      description: cleanDesc,
       source: 'receipts',
       raw: r
     })

@@ -10,12 +10,13 @@ import { useSettings } from '../../contexts/SettingsContext'
 import { generateId } from '../../utils/idGenerator'
 import { money } from '../../utils/money'
 import { formatDate, today } from '../../utils/dateHelpers'
-import { printHtml, downloadHtml, buildLetterheadDoc, escapeHtml } from '../../utils/printService'
+import { printHtml, downloadHtml, buildLetterheadDoc, escapeHtml, parseReceiptNote } from '../../utils/printService'
 
 export default function ReceiptList() {
   const [receipts, setReceipts] = useState([])
   const [customers, setCustomers] = useState([])
   const [invoices, setInvoices] = useState([])
+  const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -25,7 +26,9 @@ export default function ReceiptList() {
     invoice_id: '',
     date: today(),
     amount: '',
-    note: '',
+    payment_method: 'Cash',
+    account_name: 'Main Office Cash Vault',
+    custom_note: '',
   })
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -36,10 +39,11 @@ export default function ReceiptList() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [rcptRes, custRes, invRes] = await Promise.all([
+    const [rcptRes, custRes, invRes, setRes] = await Promise.all([
       supabase.from('receipts').select('*, customers(name, mobile)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, mobile').order('name'),
       supabase.from('invoices').select('id, customer_id, grand_total, date').order('created_at', { ascending: false }),
+      supabase.from('settings').select('*').eq('id', 1).single()
     ])
 
     const allReceipts = rcptRes.data || []
@@ -60,6 +64,9 @@ export default function ReceiptList() {
     if (custRes.data) setCustomers(custRes.data)
     setInvoices(invoicesWithDue)
 
+    const accs = setRes.data?.data?.accountsData?.accounts || []
+    setAccounts(accs)
+
     setLoading(false)
   }, [toastError])
 
@@ -68,24 +75,30 @@ export default function ReceiptList() {
   }, [load])
 
   const openCreate = () => {
+    const defaultAcc = accounts[0]?.name || 'Main Office Cash Vault'
     setForm({
       customer_id: '',
       invoice_id: '',
       date: today(),
       amount: '',
-      note: '',
+      payment_method: 'Cash',
+      account_name: defaultAcc,
+      custom_note: '',
     })
     setEditingId(null)
     setModalOpen(true)
   }
 
   const openEdit = (rcpt) => {
+    const { paymentMethod, accountName, cleanNote } = parseReceiptNote(rcpt.note)
     setForm({
       customer_id: rcpt.customer_id || '',
       invoice_id: rcpt.invoice_id || '',
       date: rcpt.date || today(),
       amount: rcpt.amount || '',
-      note: rcpt.note || '',
+      payment_method: paymentMethod || 'Cash',
+      account_name: accountName || accounts[0]?.name || 'Main Office Cash Vault',
+      custom_note: cleanNote || '',
     })
     setEditingId(rcpt.id)
     setModalOpen(true)
@@ -101,15 +114,21 @@ export default function ReceiptList() {
       toastError('Please enter a valid payment amount')
       return
     }
+    if (!form.account_name) {
+      toastError('Please select which account received the money')
+      return
+    }
 
     setSaving(true)
     try {
+      const formattedNote = `[Paid Via: ${form.payment_method || 'Cash'}] [Received To: ${form.account_name || 'Main Office Cash Vault'}] ${form.custom_note.trim()}`
+
       const payload = {
         customer_id: form.customer_id,
         invoice_id: form.invoice_id || null,
         date: form.date,
         amount: parseFloat(form.amount),
-        note: form.note || null,
+        note: formattedNote,
       }
 
       if (editingId) {
@@ -121,7 +140,7 @@ export default function ReceiptList() {
         const newId = await generateId('receipt', 'receipts', idConfig)
         const { error } = await supabase.from('receipts').insert({ ...payload, id: newId })
         if (error) throw error
-        success(`Money Receipt ${newId} created`)
+        success(`Money Receipt ${newId} created for ${money(payload.amount, currencySymbol)} into ${form.account_name}`)
       }
 
       setModalOpen(false)
@@ -230,27 +249,27 @@ export default function ReceiptList() {
                   <th>Receipt #</th>
                   <th>Date</th>
                   <th>Customer</th>
-                  <th>Phone</th>
                   <th>Linked Invoice</th>
-                  <th className="text-right">Invoice Total</th>
+                  <th>Paid Via</th>
+                  <th>Received Into Account</th>
                   <th className="text-right">Amount Received</th>
                   <th className="text-right">Remaining Due</th>
-                  <th>Payment Note</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(r => {
                   const linkedInv = invoices.find(i => i.id === r.invoice_id)
-                  const invTotal = linkedInv ? (parseFloat(linkedInv.grand_total) || 0) : null
                   const remainingDue = linkedInv ? linkedInv.due : null
+                  const { paymentMethod, accountName } = parseReceiptNote(r.note)
+                  const isBank = accountName.toLowerCase().includes('bank')
+                  const isCash = accountName.toLowerCase().includes('cash') || accountName.toLowerCase().includes('vault')
 
                   return (
                     <tr key={r.id}>
                       <td className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{r.id}</td>
                       <td>{formatDate(r.date)}</td>
                       <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{r.customers?.name || '—'}</td>
-                      <td className="mono">{r.customers?.mobile || '—'}</td>
                       <td>
                         {r.invoice_id ? (
                           <span className="mono" style={{ color: 'var(--teal)', fontWeight: 500 }}>{r.invoice_id}</span>
@@ -258,17 +277,22 @@ export default function ReceiptList() {
                           <span style={{ color: 'var(--text-muted)' }}>General Payment</span>
                         )}
                       </td>
-                      <td className="mono text-right" style={{ color: 'var(--text-secondary)' }}>
-                        {invTotal !== null ? money(invTotal, currencySymbol) : '—'}
+                      <td>
+                        <span className="pill pill-paid" style={{ fontSize: '0.75rem' }}>
+                          💳 {paymentMethod}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`pill ${isBank ? 'pill-gold' : isCash ? 'pill-paid' : 'pill-partial'}`} style={{ fontSize: '0.75rem' }}>
+                          {isBank ? '🏛️ ' : isCash ? '💵 ' : '📱 '}
+                          {accountName}
+                        </span>
                       </td>
                       <td className="mono text-right" style={{ color: 'var(--teal)', fontWeight: 700, fontSize: '0.9rem' }}>
                         {money(r.amount, currencySymbol)}
                       </td>
                       <td className="mono text-right" style={{ fontWeight: 600, color: remainingDue > 0 ? 'var(--red)' : remainingDue === 0 ? 'var(--teal)' : 'var(--text-muted)' }}>
                         {remainingDue !== null ? money(remainingDue, currencySymbol) : '—'}
-                      </td>
-                      <td style={{ color: 'var(--text-secondary)', maxWidth: 160 }} className="truncate" title={r.note || ''}>
-                        {r.note || '—'}
                       </td>
                       <td>
                         <div className="actions-col">
@@ -444,14 +468,61 @@ export default function ReceiptList() {
             />
           </div>
 
+          <div className="form-grid form-grid-2">
+            <div className="form-group">
+              <label className="form-label required">Paid Via (Payment Method)</label>
+              <select
+                className="form-select"
+                value={form.payment_method}
+                onChange={e => setForm(f => ({ ...f, payment_method: e.target.value }))}
+                required
+              >
+                <option value="Cash">💵 Cash</option>
+                <option value="Bank Transfer">🏛️ Bank Transfer</option>
+                <option value="bKash">📱 bKash</option>
+                <option value="Nagad">📱 Nagad</option>
+                <option value="Rocket">📱 Rocket</option>
+                <option value="Credit Card">💳 Credit Card</option>
+                <option value="Cheque">📜 Cheque</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label required">Received Into Account / Wallet</label>
+              <select
+                className="form-select"
+                value={form.account_name}
+                onChange={e => setForm(f => ({ ...f, account_name: e.target.value }))}
+                required
+              >
+                {accounts.length > 0 ? (
+                  accounts.map(a => (
+                    <option key={a.id} value={a.name}>
+                      {a.type === 'bank' ? '🏛️ Bank: ' : a.type === 'cash' ? '💵 Cash: ' : '📱 Mobile: '}
+                      {a.name} ({money(a.currentBalance, currencySymbol)})
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="Main Office Cash Vault">💵 Main Office Cash Vault</option>
+                    <option value="Islami Bank Bangladesh Ltd">🏛️ Islami Bank Bangladesh Ltd</option>
+                    <option value="The City Bank Limited">🏛️ The City Bank Limited</option>
+                    <option value="bKash Merchant Account">📱 bKash Merchant Account</option>
+                    <option value="Nagad Business Account">📱 Nagad Business Account</option>
+                  </>
+                )}
+              </select>
+            </div>
+          </div>
+
           <div className="form-group">
-            <label className="form-label">Payment Method / Note</label>
+            <label className="form-label">Purpose / Additional Remarks</label>
             <textarea
               className="form-textarea"
-              placeholder="e.g. Paid via bKash / Cash / Bank Transfer with transaction reference details"
-              value={form.note}
-              onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
-              rows={3}
+              placeholder="e.g. Installment 2 for Cox's Bazar package / TrxID: 8N47A9..."
+              value={form.custom_note}
+              onChange={e => setForm(f => ({ ...f, custom_note: e.target.value }))}
+              rows={2}
             />
           </div>
         </form>
@@ -477,6 +548,7 @@ function buildReceiptHtml(rcpt, linkedInvoice, allInvoiceReceipts = [], settings
     ? allInvoiceReceipts.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0)
     : parseFloat(rcpt.amount) || 0
   const remainingDue = linkedInvoice ? Math.max(0, invoiceTotal - totalReceivedOnInvoice) : 0
+  const { paymentMethod, accountName, cleanNote } = parseReceiptNote(rcpt.note)
 
   const signatureHtml = settings?.company?.authoritySignature ? `
     <div class="signature-section" style="margin-top: 35px; display: flex; justify-content: flex-end;">
@@ -522,8 +594,10 @@ function buildReceiptHtml(rcpt, linkedInvoice, allInvoiceReceipts = [], settings
       <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Receipt Date:</span> <span class="doc-meta-value" style="font-weight: 600;">${formatDate(rcpt.date)}</span></div>
       <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Received From:</span> <span class="doc-meta-value" style="font-weight: 700;">${escapeHtml(rcpt.customers?.name || '—')}</span></div>
       <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Customer Contact:</span> <span class="doc-meta-value" style="font-family: monospace;">${escapeHtml(rcpt.customers?.mobile || '—')}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Paid Via (Method):</span> <span class="doc-meta-value" style="font-weight: 700; color: #166534;">${escapeHtml(paymentMethod)}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Received Into Account:</span> <span class="doc-meta-value" style="font-weight: 700; color: #0A0F1C;">${escapeHtml(accountName)}</span></div>
       <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Linked Invoice:</span> <span class="doc-meta-value" style="font-family: monospace; font-weight: 600;">${rcpt.invoice_id ? escapeHtml(rcpt.invoice_id) : 'General Advance / Deposit'}</span></div>
-      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Payment Note:</span> <span class="doc-meta-value">${escapeHtml(rcpt.note || 'Cash / Electronic Transfer')}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Remarks / Note:</span> <span class="doc-meta-value">${escapeHtml(cleanNote || 'Settlement')}</span></div>
     </div>
 
     ${balanceBreakdownHtml}

@@ -12,13 +12,15 @@ import { generateId } from '../../utils/idGenerator'
 import { money } from '../../utils/money'
 import { formatDate, today } from '../../utils/dateHelpers'
 import { invoiceSubtotal, invoiceCost, invoiceNetProfit, invoiceReceived } from '../../utils/calculations'
-import { printHtml, downloadHtml, buildLetterheadDoc, escapeHtml } from '../../utils/printService'
+import { printHtml, downloadHtml, buildLetterheadDoc, escapeHtml, parseReceiptNote } from '../../utils/printService'
 
 const EMPTY_LINE = () => ({ item_id: '', name: '', qty: 1, price: '', buying_price: 0 })
 
 const INIT_FORM = {
   customer_id: '', sales_by: '', invoice_date: today(), travel_date: '',
   num_travelers: 1, discount: 0, paid_now: 0, bank_account: 'none',
+  payment_method: 'Cash',
+  account_name: 'Main Office Cash Vault',
   items: [EMPTY_LINE()],
 }
 
@@ -27,6 +29,7 @@ export default function InvoiceList() {
   const [customers, setCustomers] = useState([])
   const [employees, setEmployees] = useState([])
   const [masterItems, setMasterItems] = useState([])
+  const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
@@ -42,12 +45,13 @@ export default function InvoiceList() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [invRes, custRes, empRes, itemRes, rcptRes] = await Promise.all([
+    const [invRes, custRes, empRes, itemRes, rcptRes, setRes] = await Promise.all([
       supabase.from('invoices').select('*, customers(name, mobile)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, mobile').order('name'),
       supabase.from('employees').select('id, name').order('name'),
       supabase.from('items').select('*').order('name'),
       supabase.from('receipts').select('id, invoice_id, amount, date, note'),
+      supabase.from('settings').select('*').eq('id', 1).single()
     ])
 
     const allReceipts = rcptRes.data || []
@@ -61,13 +65,25 @@ export default function InvoiceList() {
     if (!custRes.error) setCustomers(custRes.data || [])
     if (!empRes.error) setEmployees(empRes.data || [])
     if (!itemRes.error) setMasterItems(itemRes.data || [])
+
+    const accs = setRes.data?.data?.accountsData?.accounts || []
+    setAccounts(accs)
+
     setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])
 
   const openCreate = (prefillCustomer = null) => {
-    setForm({ ...INIT_FORM, customer_id: prefillCustomer?.id || '', items: [EMPTY_LINE()], invoice_date: today() })
+    const defaultAcc = accounts[0]?.name || 'Main Office Cash Vault'
+    setForm({
+      ...INIT_FORM,
+      customer_id: prefillCustomer?.id || '',
+      items: [EMPTY_LINE()],
+      invoice_date: today(),
+      account_name: defaultAcc,
+      payment_method: 'Cash'
+    })
     setEditingId(null)
     setModalOpen(true)
   }
@@ -75,6 +91,7 @@ export default function InvoiceList() {
   const openEdit = async (inv) => {
     // Load full invoice items
     const { data: invData } = await supabase.from('invoices').select('*').eq('id', inv.id).single()
+    const defaultAcc = accounts[0]?.name || 'Main Office Cash Vault'
     setForm({
       customer_id: invData.customer_id || '',
       sales_by: invData.sales_by_id || invData.sales_by || '',
@@ -83,6 +100,8 @@ export default function InvoiceList() {
       num_travelers: invData.travelers || invData.num_travelers || 1,
       discount: invData.discount || 0,
       paid_now: 0, // Don't re-apply past payment
+      payment_method: 'Cash',
+      account_name: defaultAcc,
       bank_account: invData.bank_choice || invData.bank_account || 'primary',
       items: (invData.items && invData.items.length > 0) ? invData.items : [EMPTY_LINE()],
     })
@@ -152,13 +171,14 @@ export default function InvoiceList() {
         if (addPayment > 0) {
           const rcptConfig = settings?.idSettings?.receipt || idSettings?.receipt
           const rcptId = await generateId('receipt', 'receipts', rcptConfig)
+          const paymentNote = `[Paid Via: ${form.payment_method || 'Cash'}] [Received To: ${form.account_name || 'Main Office Cash Vault'}] Additional payment on invoice update`
           await supabase.from('receipts').insert({
             id: rcptId,
             customer_id: form.customer_id,
             invoice_id: editingId,
             amount: addPayment,
             date: form.invoice_date || today(),
-            note: 'Additional payment recorded on invoice update',
+            note: paymentNote,
           })
         }
         success('Invoice updated' + (addPayment > 0 ? ' and payment recorded' : ''))
@@ -173,13 +193,14 @@ export default function InvoiceList() {
         if (paidNow > 0) {
           const rcptConfig = settings?.idSettings?.receipt || idSettings?.receipt
           const rcptId = await generateId('receipt', 'receipts', rcptConfig)
+          const paymentNote = `[Paid Via: ${form.payment_method || 'Cash'}] [Received To: ${form.account_name || 'Main Office Cash Vault'}] Paid at invoice creation`
           await supabase.from('receipts').insert({
             id: rcptId,
             customer_id: form.customer_id,
             invoice_id: newId,
             amount: paidNow,
             date: form.invoice_date || today(),
-            note: 'Paid at invoice creation',
+            note: paymentNote,
           })
         }
         success(`Invoice ${newId} created`)
@@ -426,10 +447,59 @@ export default function InvoiceList() {
                 <input type="number" step="0.01" min="0" className="form-input" value={form.discount} onChange={e => set('discount', e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label">{editingId ? `Add Payment (${currencySymbol})` : `Paid Now (${currencySymbol})`}</label>
+                <label className="form-label">{editingId ? `Add Payment (${currencySymbol})` : `Paid Now / Advance (${currencySymbol})`}</label>
                 <input type="number" step="0.01" min="0" className="form-input" placeholder="0.00" value={form.paid_now} onChange={e => set('paid_now', e.target.value)} />
                 {editingId && <div className="form-hint">Optional: enter an amount to record an additional money receipt.</div>}
               </div>
+
+              {parseFloat(form.paid_now) > 0 && (
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gold)', textTransform: 'uppercase', marginBottom: 8 }}>
+                    💳 Payment Method &amp; Destination Account
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label className="form-label required">Paid Via (Payment Method)</label>
+                    <select
+                      className="form-select"
+                      value={form.payment_method}
+                      onChange={e => set('payment_method', e.target.value)}
+                    >
+                      <option value="Cash">💵 Cash</option>
+                      <option value="Bank Transfer">🏛️ Bank Transfer</option>
+                      <option value="bKash">📱 bKash</option>
+                      <option value="Nagad">📱 Nagad</option>
+                      <option value="Rocket">📱 Rocket</option>
+                      <option value="Credit Card">💳 Credit Card</option>
+                      <option value="Cheque">📜 Cheque</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label required">Received Into Account / Wallet</label>
+                    <select
+                      className="form-select"
+                      value={form.account_name}
+                      onChange={e => set('account_name', e.target.value)}
+                    >
+                      {accounts.length > 0 ? (
+                        accounts.map(a => (
+                          <option key={a.id} value={a.name}>
+                            {a.type === 'bank' ? '🏛️ Bank: ' : a.type === 'cash' ? '💵 Cash: ' : '📱 Mobile: '}
+                            {a.name} ({money(a.currentBalance, currencySymbol)})
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="Main Office Cash Vault">💵 Main Office Cash Vault</option>
+                          <option value="Islami Bank Bangladesh Ltd">🏛️ Islami Bank Bangladesh Ltd</option>
+                          <option value="The City Bank Limited">🏛️ The City Bank Limited</option>
+                          <option value="bKash Merchant Account">📱 bKash Merchant Account</option>
+                          <option value="Nagad Business Account">📱 Nagad Business Account</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="invoice-summary">
               <div className="invoice-summary-row">
@@ -557,13 +627,23 @@ function InvoiceDetail({ inv, invoices, customers, currencySymbol }) {
 
       {receipts.length > 0 && (
         <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600 }}>Payment History</div>
-          {receipts.map(r => (
-            <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--card-border)', fontSize: '0.82rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>{r.id} — {formatDate(r.date)} {r.note ? `(${r.note})` : ''}</span>
-              <span className="mono" style={{ color: 'var(--teal)' }}>{money(r.amount, currencySymbol)}</span>
-            </div>
-          ))}
+          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600 }}>
+            💳 Payment History &amp; Settlements
+          </div>
+          {receipts.map(r => {
+            const { paymentMethod, accountName, cleanNote } = parseReceiptNote(r.note)
+            return (
+              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--card-border)', fontSize: '0.82rem' }}>
+                <div>
+                  <span className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{r.id}</span> &middot; {formatDate(r.date)} &middot;
+                  <span className="pill pill-paid" style={{ marginLeft: 6, fontSize: '0.72rem' }}>💳 {paymentMethod}</span>
+                  <span className="pill pill-gold" style={{ marginLeft: 4, fontSize: '0.72rem' }}>📥 {accountName}</span>
+                  {cleanNote && <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>({cleanNote})</span>}
+                </div>
+                <span className="mono" style={{ color: 'var(--teal)', fontWeight: 700 }}>{money(r.amount, currencySymbol)}</span>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
@@ -605,6 +685,41 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
       </div>
     </div>`
 
+  const paymentsBreakdownHtml = receipts.length > 0 ? `
+    <div style="margin: 20px 0; border: 1px solid #e0d7c2; border-radius: 6px; overflow: hidden;">
+      <div style="background: #faf7f0; padding: 8px 12px; font-weight: 700; font-size: 11px; color: #444; border-bottom: 1px solid #e0d7c2; text-transform: uppercase; letter-spacing: 0.5px;">
+        💳 Payment Settlements &amp; Deposit History
+      </div>
+      <table style="margin: 0; width: 100%; border-collapse: collapse; font-size: 11px;">
+        <thead>
+          <tr style="background: #fdfaf2; color: #555; text-align: left;">
+            <th style="padding: 6px 10px;">Receipt #</th>
+            <th style="padding: 6px 10px;">Payment Date</th>
+            <th style="padding: 6px 10px;">Paid Via (Method)</th>
+            <th style="padding: 6px 10px;">Received Into Account</th>
+            <th style="padding: 6px 10px; text-align: right;">Amount Paid</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${receipts.map(r => {
+            const { paymentMethod, accountName } = parseReceiptNote(r.note)
+            return `
+              <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 6px 10px; font-family: monospace; font-weight: 600;">${escapeHtml(r.id || '—')}</td>
+                <td style="padding: 6px 10px;">${formatDate(r.date)}</td>
+                <td style="padding: 6px 10px;"><b>${escapeHtml(paymentMethod)}</b></td>
+                <td style="padding: 6px 10px;"><b>${escapeHtml(accountName)}</b></td>
+                <td style="padding: 6px 10px; text-align: right; font-weight: 700; font-family: monospace; color: #166534;">
+                  ${money(r.amount, currencySymbol)}
+                </td>
+              </tr>
+            `
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : ''
+
   const content = `
     <div class="doc-title">INVOICE</div>
     <div class="travel-date-banner">✈ TRAVEL DATE: ${formatDate(inv.travel_date)}</div>
@@ -639,6 +754,7 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
       <div class="totals-row ${due > 0 ? 'due-row' : 'paid-row'}"><span>${due > 0 ? 'Balance Due' : 'Fully Paid'}</span><span>${money(due, currencySymbol)}</span></div>
     </div>
 
+    ${paymentsBreakdownHtml}
     ${bankHtml}
     ${signatureHtml}
   `

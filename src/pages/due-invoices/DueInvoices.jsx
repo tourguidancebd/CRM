@@ -11,9 +11,11 @@ import { money } from '../../utils/money'
 import { formatDate } from '../../utils/dateHelpers'
 import { invoiceReceived } from '../../utils/calculations'
 import { generateId } from '../../utils/idGenerator'
+import { parseReceiptNote } from '../../utils/printService'
 
 export default function DueInvoices() {
   const [invoices, setInvoices] = useState([])
+  const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [collectTarget, setCollectTarget] = useState(null)
@@ -23,10 +25,11 @@ export default function DueInvoices() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [invRes, rcptRes, empRes] = await Promise.all([
+    const [invRes, rcptRes, empRes, setRes] = await Promise.all([
       supabase.from('invoices').select('*, customers(*)').order('created_at', { ascending: false }),
-      supabase.from('receipts').select('id, invoice_id, amount'),
-      supabase.from('employees').select('id, name')
+      supabase.from('receipts').select('id, invoice_id, amount, date, note'),
+      supabase.from('employees').select('id, name'),
+      supabase.from('settings').select('*').eq('id', 1).single()
     ])
 
     if (invRes.error) {
@@ -54,6 +57,10 @@ export default function DueInvoices() {
       })
       setInvoices(due)
     }
+
+    const accs = setRes.data?.data?.accountsData?.accounts || []
+    setAccounts(accs)
+
     setLoading(false)
   }, [toastError])
 
@@ -159,6 +166,7 @@ export default function DueInvoices() {
         <CollectDueModal
           inv={collectTarget.inv}
           dueAmount={collectTarget.due}
+          accounts={accounts}
           onClose={() => { setCollectTarget(null); load() }}
           currencySymbol={currencySymbol}
         />
@@ -200,6 +208,31 @@ export default function DueInvoices() {
               </table>
             </div>
 
+            {/* Payments History Breakdown */}
+            {(viewInvoice.receipts || []).length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8, fontWeight: 700 }}>
+                  💳 Payments Recorded On This Invoice
+                </div>
+                <div style={{ border: '1px solid var(--card-border)', borderRadius: 8, overflow: 'hidden' }}>
+                  {viewInvoice.receipts.map(r => {
+                    const { paymentMethod, accountName, cleanNote } = parseReceiptNote(r.note)
+                    return (
+                      <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderBottom: '1px solid var(--card-border)', fontSize: '0.82rem', background: 'rgba(255,255,255,0.01)' }}>
+                        <div>
+                          <span className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{r.id}</span> &middot; {formatDate(r.date)} &middot;
+                          <span className="pill pill-paid" style={{ marginLeft: 6, fontSize: '0.72rem' }}>💳 {paymentMethod}</span>
+                          <span className="pill pill-gold" style={{ marginLeft: 4, fontSize: '0.72rem' }}>📥 {accountName}</span>
+                          {cleanNote && <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>({cleanNote})</span>}
+                        </div>
+                        <span className="mono" style={{ color: 'var(--teal)', fontWeight: 700 }}>{money(r.amount, currencySymbol)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '12px 16px', borderRadius: 8 }}>
               <div>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total: <b>{money(viewInvoice.grand_total, currencySymbol)}</b></span>
@@ -219,30 +252,37 @@ export default function DueInvoices() {
   )
 }
 
-function CollectDueModal({ inv, dueAmount, onClose, currencySymbol }) {
+function CollectDueModal({ inv, dueAmount, accounts = [], onClose, currencySymbol }) {
+  const defaultAcc = accounts[0]?.name || 'Main Office Cash Vault'
   const [amount, setAmount] = useState(dueAmount)
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [note, setNote] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [accountName, setAccountName] = useState(defaultAcc)
+  const [customNote, setCustomNote] = useState('')
   const [saving, setSaving] = useState(false)
   const { success, error: toastError, toasts, dismiss } = useToast()
   const { settings, idSettings } = useSettings()
 
   const handleSave = async () => {
     if (!amount || parseFloat(amount) <= 0) { toastError('Amount must be greater than 0'); return }
+    if (!accountName) { toastError('Please select destination account'); return }
+
     setSaving(true)
     try {
       const rcptConfig = settings?.idSettings?.receipt || idSettings?.receipt
       const rcptId = await generateId('receipt', 'receipts', rcptConfig)
+      const formattedNote = `[Paid Via: ${paymentMethod || 'Cash'}] [Received To: ${accountName || 'Main Office Cash Vault'}] ${customNote || 'Due collection settlement for ' + inv.id}`
+
       const { error } = await supabase.from('receipts').insert({
         id: rcptId,
         customer_id: inv.customer_id,
         invoice_id: inv.id,
         amount: parseFloat(amount),
         date,
-        note: note || `Due collection for ${inv.id}`,
+        note: formattedNote,
       })
       if (error) throw error
-      success(`Payment ${rcptId} recorded`)
+      success(`Payment ${rcptId} of ${money(amount, currencySymbol)} collected via ${paymentMethod} into ${accountName}`)
       onClose()
     } catch (err) {
       toastError('Failed: ' + err.message)
@@ -253,7 +293,7 @@ function CollectDueModal({ inv, dueAmount, onClose, currencySymbol }) {
 
   return (
     <>
-      <Modal isOpen={true} onClose={onClose} title={`Collect Due — ${inv.id}`} size="sm"
+      <Modal isOpen={true} onClose={onClose} title={`Collect Due — ${inv.id}`} size="md"
         footer={
           <>
             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
@@ -261,14 +301,99 @@ function CollectDueModal({ inv, dueAmount, onClose, currencySymbol }) {
           </>
         }
       >
-        <div style={{ marginBottom: 16, padding: '10px 14px', background: 'var(--red-dim)', border: '1px solid rgba(239,100,97,0.3)', borderRadius: 'var(--radius-sm)' }}>
-          <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Outstanding Balance</div>
-          <div style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)', fontSize: '1.2rem', fontWeight: 700 }}>{money(dueAmount, currencySymbol)}</div>
-          <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Customer: {inv.customers?.name}</div>
+        <div style={{ marginBottom: 16, padding: '12px 16px', background: 'var(--red-dim)', border: '1px solid rgba(239,100,97,0.3)', borderRadius: 'var(--radius-sm)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'uppercase' }}>Customer</div>
+              <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.95rem' }}>{inv.customers?.name || '—'}</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>Invoice: {inv.id}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'uppercase' }}>Remaining Due</div>
+              <div style={{ color: 'var(--red)', fontFamily: 'var(--font-mono)', fontSize: '1.3rem', fontWeight: 800 }}>{money(dueAmount, currencySymbol)}</div>
+            </div>
+          </div>
         </div>
-        <div className="form-group"><label className="form-label required">Amount ({currencySymbol})</label><input type="number" step="0.01" className="form-input" value={amount} onChange={e => setAmount(e.target.value)} /></div>
-        <div className="form-group"><label className="form-label">Date</label><input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} /></div>
-        <div className="form-group"><label className="form-label">Note</label><input className="form-input" placeholder="Optional note" value={note} onChange={e => setNote(e.target.value)} /></div>
+
+        <div className="form-grid form-grid-2">
+          <div className="form-group">
+            <label className="form-label required">Amount to Collect ({currencySymbol})</label>
+            <input
+              type="number"
+              step="0.01"
+              className="form-input"
+              style={{ fontWeight: 700, color: 'var(--teal)', fontSize: '1rem' }}
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label className="form-label required">Collection Date</label>
+            <input
+              type="date"
+              className="form-input"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="form-grid form-grid-2">
+          <div className="form-group">
+            <label className="form-label required">Paid Via (Payment Method)</label>
+            <select
+              className="form-select"
+              value={paymentMethod}
+              onChange={e => setPaymentMethod(e.target.value)}
+              required
+            >
+              <option value="Cash">💵 Cash</option>
+              <option value="Bank Transfer">🏛️ Bank Transfer</option>
+              <option value="bKash">📱 bKash</option>
+              <option value="Nagad">📱 Nagad</option>
+              <option value="Rocket">📱 Rocket</option>
+              <option value="Credit Card">💳 Credit Card</option>
+              <option value="Cheque">📜 Cheque</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label required">Received Into Account / Wallet</label>
+            <select
+              className="form-select"
+              value={accountName}
+              onChange={e => setAccountName(e.target.value)}
+              required
+            >
+              {accounts.length > 0 ? (
+                accounts.map(a => (
+                  <option key={a.id} value={a.name}>
+                    {a.type === 'bank' ? '🏛️ Bank: ' : a.type === 'cash' ? '💵 Cash: ' : '📱 Mobile: '}
+                    {a.name} ({money(a.currentBalance, currencySymbol)})
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="Main Office Cash Vault">💵 Main Office Cash Vault</option>
+                  <option value="Islami Bank Bangladesh Ltd">🏛️ Islami Bank Bangladesh Ltd</option>
+                  <option value="The City Bank Limited">🏛️ The City Bank Limited</option>
+                  <option value="bKash Merchant Account">📱 bKash Merchant Account</option>
+                  <option value="Nagad Business Account">📱 Nagad Business Account</option>
+                </>
+              )}
+            </select>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Note / Reference</label>
+          <input
+            className="form-input"
+            placeholder="e.g. TrxID: 9M87B2 or Cheque #123456"
+            value={customNote}
+            onChange={e => setCustomNote(e.target.value)}
+          />
+        </div>
       </Modal>
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </>
