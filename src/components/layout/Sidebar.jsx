@@ -3,35 +3,25 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useSettings } from '../../contexts/SettingsContext'
 
 const NAV_ITEMS = [
-  { section: 'Overview', items: [
-    { to: '/dashboard', label: 'Dashboard', icon: DashIcon, module: 'dashboard' },
-  ]},
-  { section: 'CRM', items: [
-    { to: '/customers', label: 'Customers', icon: CustomersIcon, module: 'customers' },
-    { to: '/agents', label: 'Agents', icon: AgentsIcon, module: 'agents' },
-    { to: '/employees', label: 'Employees', icon: EmployeesIcon, module: 'employees' },
-    { to: '/items', label: 'Items', icon: ItemsIcon, module: 'items' },
-  ]},
-  { section: 'Sales', items: [
-    { to: '/invoices', label: 'Invoices', icon: InvoiceIcon, module: 'invoices' },
-    { to: '/due-invoices', label: 'Due Invoices', icon: DueIcon, module: 'due-invoices' },
-    { to: '/journeys', label: "Today's Journey", icon: JourneyIcon, module: 'journeys' },
-    { to: '/receipts', label: 'Money Receipts', icon: ReceiptIcon, module: 'receipts' },
-  ]},
-  { section: 'Finance', items: [
-    { to: '/vendor-payments', label: 'Vendor Payments', icon: VendorIcon, module: 'vendor-payments' },
-    { to: '/expenses', label: 'Expenses', icon: ExpenseIcon, module: 'expenses' },
-  ]},
-  { section: 'Reports & Admin', items: [
-    { to: '/reports', label: 'Reports', icon: ReportIcon, module: 'reports' },
-    { to: '/users', label: 'Users & Roles', icon: UsersIcon, module: 'users' },
-    { to: '/settings', label: 'Settings', icon: SettingsIcon, module: 'settings' },
-  ]},
+  { to: '/dashboard', label: 'Dashboard', icon: DashIcon, module: 'dashboard' },
+  { to: '/customers', label: 'Customer', icon: CustomersIcon, module: 'customers' },
+  { to: '/agents', label: 'Agent', icon: AgentsIcon, module: 'agents' },
+  { to: '/employees', label: 'Employees', icon: EmployeesIcon, module: 'employees' },
+  { to: '/items', label: 'Items', icon: ItemsIcon, module: 'items' },
+  { to: '/invoices', label: 'Invoice', icon: InvoiceIcon, module: 'invoices' },
+  { to: '/due-invoices', label: 'Due Invoices', icon: DueIcon, module: 'due-invoices' },
+  { to: '/journeys', label: "Today's Journey", icon: JourneyIcon, module: 'journeys' },
+  { to: '/receipts', label: 'Money Receipt', icon: ReceiptIcon, module: 'receipts' },
+  { to: '/vendor-payments', label: 'Vendor Payment', icon: VendorIcon, module: 'vendor-payments' },
+  { to: '/expenses', label: 'Expense', icon: ExpenseIcon, module: 'expenses' },
+  { to: '/reports', label: 'Reports', icon: ReportIcon, module: 'reports' },
+  { to: '/users', label: 'User & Role', icon: UsersIcon, module: 'users' },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon, module: 'settings' },
 ]
 
 export function Sidebar({ isOpen, onClose }) {
   const { can, role, user, profile, signOut } = useAuth()
-  const { crmName, company, settings } = useSettings()
+  const { crmName, company } = useSettings()
   const navigate = useNavigate()
 
   const handleSignOut = async () => {
@@ -41,6 +31,8 @@ export function Sidebar({ isOpen, onClose }) {
 
   const userInitial = (profile?.full_name || user?.email || 'U')[0].toUpperCase()
   const userName = profile?.full_name || user?.email?.split('@')[0] || 'User'
+
+  const visibleItems = NAV_ITEMS.filter(item => can(item.module))
 
   return (
     <>
@@ -59,26 +51,17 @@ export function Sidebar({ isOpen, onClose }) {
 
         {/* Navigation */}
         <nav className="sidebar-nav" aria-label="Main navigation">
-          {NAV_ITEMS.map(section => {
-            const visibleItems = section.items.filter(item => can(item.module))
-            if (visibleItems.length === 0) return null
-            return (
-              <div key={section.section}>
-                <div className="sidebar-nav-section">{section.section}</div>
-                {visibleItems.map(item => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
-                    onClick={onClose}
-                  >
-                    <item.icon className="nav-icon" />
-                    <span>{item.label}</span>
-                  </NavLink>
-                ))}
-              </div>
-            )
-          })}
+          {visibleItems.map(item => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
+              onClick={onClose}
+            >
+              <item.icon className="nav-icon" />
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
         </nav>
 
         {/* User section */}
@@ -104,48 +87,48 @@ export function Sidebar({ isOpen, onClose }) {
   )
 }
 
-/* ---- SVG Icons (inline to avoid external dep) ---- */
+/* ---- SVG Icons (matched to prototype) ---- */
 function DashIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
 }
 function CustomersIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c1.2-4 4-6 7-6s5.8 2 7 6"/></svg>
 }
 function AgentsIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c1-3.4 3.4-5.2 6-5.2s5 1.8 6 5.2"/><path d="M16 4.2a3 3 0 010 5.8M21 20c-.6-2.4-1.8-4-3.6-4.8"/></svg>
 }
 function EmployeesIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="7" r="4"/><path d="M4 21c1.4-4.4 4.6-6.8 8-6.8s6.6 2.4 8 6.8"/></svg>
 }
 function ItemsIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
 }
 function InvoiceIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M6 2h9l3 3v17H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>
 }
 function DueIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 8v5l3 2"/></svg>
 }
 function JourneyIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 12h18M3 12l5-5M3 12l5 5"/><circle cx="18" cy="12" r="2"/></svg>
 }
 function ReceiptIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></svg>
 }
 function VendorIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 7h18M3 12h18M3 17h12"/></svg>
 }
 function ExpenseIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1.4 1.3-2.5 3-2.5s3 1 3 2.2c0 2.8-6 1.5-6 4.3 0 1.3 1.3 2.3 3 2.3s3-1 3-2.3"/></svg>
 }
 function ReportIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 20V10M11 20V4M18 20v-7"/></svg>
 }
 function UsersIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="8" cy="8" r="3"/><path d="M2 20c.8-3.4 3-5.2 6-5.2s5.2 1.8 6 5.2"/><path d="M17 9l1.5 1.5L22 7"/></svg>
 }
 function SettingsIcon({ className }) {
-  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M12 1v3M12 20v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M1 12h3M20 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
 }
 function LogoutIcon() {
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
