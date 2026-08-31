@@ -18,19 +18,36 @@ export default function DueInvoices() {
   const [search, setSearch] = useState('')
   const [collectTarget, setCollectTarget] = useState(null)
   const [viewInvoice, setViewInvoice] = useState(null)
-  const { toasts, dismiss } = useToast()
+  const { toasts, dismiss, error: toastError, success } = useToast()
   const { settings, currencySymbol } = useSettings()
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('invoices')
-      .select('*, customers(*), employees(name), receipts(amount)')
-      .order('created_at', { ascending: false })
+    const [invRes, rcptRes, empRes] = await Promise.all([
+      supabase.from('invoices').select('*, customers(*)').order('created_at', { ascending: false }),
+      supabase.from('receipts').select('id, invoice_id, amount'),
+      supabase.from('employees').select('id, name')
+    ])
 
-    if (!error) {
+    if (invRes.error) {
+      toastError('Failed to load due invoices: ' + invRes.error.message)
+    } else {
+      const allReceipts = rcptRes.data || []
+      const allEmployees = empRes.data || []
+
+      const invoicesWithData = (invRes.data || []).map(inv => {
+        const invReceipts = allReceipts.filter(r => r.invoice_id === inv.id)
+        const emp = allEmployees.find(e => e.id === inv.sales_by_id || e.id === inv.sales_by)
+        return {
+          ...inv,
+          receipts: invReceipts,
+          employees: emp ? { name: emp.name } : null,
+          employee_name: emp?.name || '—'
+        }
+      })
+
       // Filter client-side to invoices with due > 0
-      const due = (data || []).filter(inv => {
+      const due = invoicesWithData.filter(inv => {
         const received = invoiceReceived(inv.receipts || [])
         const due = (parseFloat(inv.grand_total) || 0) - received
         return due > 0
@@ -38,7 +55,7 @@ export default function DueInvoices() {
       setInvoices(due)
     }
     setLoading(false)
-  }, [])
+  }, [toastError])
 
   useEffect(() => { load() }, [load])
 

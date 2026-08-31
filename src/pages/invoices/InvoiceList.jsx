@@ -42,13 +42,22 @@ export default function InvoiceList() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [invRes, custRes, empRes, itemRes] = await Promise.all([
-      supabase.from('invoices').select('*, customers(name, mobile), receipts(amount)').order('created_at', { ascending: false }),
+    const [invRes, custRes, empRes, itemRes, rcptRes] = await Promise.all([
+      supabase.from('invoices').select('*, customers(name, mobile)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, mobile').order('name'),
       supabase.from('employees').select('id, name').order('name'),
       supabase.from('items').select('*').order('name'),
+      supabase.from('receipts').select('id, invoice_id, amount, date, note'),
     ])
-    if (!invRes.error) setInvoices(invRes.data || [])
+
+    const allReceipts = rcptRes.data || []
+    if (!invRes.error) {
+      const invoicesWithReceipts = (invRes.data || []).map(inv => ({
+        ...inv,
+        receipts: allReceipts.filter(r => r.invoice_id === inv.id)
+      }))
+      setInvoices(invoicesWithReceipts)
+    }
     if (!custRes.error) setCustomers(custRes.data || [])
     if (!empRes.error) setEmployees(empRes.data || [])
     if (!itemRes.error) setMasterItems(itemRes.data || [])

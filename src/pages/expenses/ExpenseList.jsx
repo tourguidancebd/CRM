@@ -15,35 +15,35 @@ import { printHtml, downloadHtml, buildLetterheadDoc, escapeHtml } from '../../u
 // Default categories exactly as defined in §5.11
 const DEFAULT_CATEGORY_GROUPS = [
   {
-    group: 'Office & Administration',
+    group: 'A. Office & Administration',
     items: ['Office Rent', 'Electricity', 'Water', 'Internet', 'Telephone', 'Stationery', 'Printing & Photocopy', 'Office Supplies', 'Cleaning & Hygiene', 'Office Maintenance', 'Software & Subscription']
   },
   {
-    group: 'Staff & Employee',
+    group: 'B. Staff & Employee',
     items: ['Salary & Wages', 'Staff Allowance', 'Overtime', 'Staff Meals', 'Staff Transportation', 'Training & Development']
   },
   {
-    group: 'Transportation',
+    group: 'C. Transportation',
     items: ['Local Transportation', 'Fuel', 'Parking & Toll', 'Vehicle Repair & Maintenance', 'Bus Operational Expense']
   },
   {
-    group: 'Tour Operation',
+    group: 'D. Tour Operation',
     items: ['Hotel & Accommodation', 'Tour Guide', 'Local Transport', 'Food & Catering', 'Ship/Boat Operational Expense', 'Tour Staff Expense']
   },
   {
-    group: 'Sales & Marketing',
+    group: 'E. Sales & Marketing',
     items: ['Facebook Advertising', 'Google Advertising', 'Promotional Materials', 'Client Meeting Expense', 'Client Entertainment', 'Business Development']
   },
   {
-    group: 'Financial & Legal',
+    group: 'F. Financial & Legal',
     items: ['Bank Charges', 'Mobile Banking Charges', 'Government Fees & Licenses', 'Legal & Professional Fees', 'Accounting & Audit', 'Taxes & VAT']
   },
   {
-    group: 'Customer Related',
+    group: 'G. Customer Related',
     items: ['Customer Refund', 'Customer Compensation', 'Customer Service Expense']
   },
   {
-    group: 'General',
+    group: 'H. General',
     items: ['Petty Cash', 'Emergency Expense', 'Miscellaneous Expense', 'Other Operating Expense']
   }
 ]
@@ -59,7 +59,7 @@ export default function ExpenseList() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({
-    category: '',
+    category: 'Office Rent',
     date: today(),
     description: '',
     vendor: '',
@@ -73,7 +73,7 @@ export default function ExpenseList() {
   // Custom Category Modal
   const [catModalOpen, setCatModalOpen] = useState(false)
   const [newCatName, setNewCatName] = useState('')
-  const [newCatGroup, setNewCatGroup] = useState('General')
+  const [newCatGroup, setNewCatGroup] = useState('H. General')
   const [savingCat, setSavingCat] = useState(false)
 
   const { toasts, success, error: toastError, dismiss } = useToast()
@@ -102,7 +102,6 @@ export default function ExpenseList() {
       setCategories(data || [])
     } catch (err) {
       console.warn('Category fetch/seed warning:', err)
-      // Fallback in-memory list if table structure differs
       const fallbackList = []
       for (const g of DEFAULT_CATEGORY_GROUPS) {
         for (const item of g.items) {
@@ -255,12 +254,18 @@ export default function ExpenseList() {
   }
 
   // Group categories for rendering grouped select
-  const groupedCategories = categories.reduce((acc, cat) => {
-    const grp = cat.group_name || 'General'
-    if (!acc[grp]) acc[grp] = []
-    acc[grp].push(cat.name)
+  const groupedCategories = (() => {
+    const acc = {}
+    DEFAULT_CATEGORY_GROUPS.forEach(g => {
+      acc[g.group] = [...g.items]
+    })
+    categories.forEach(cat => {
+      const grp = cat.group_name || 'H. General'
+      if (!acc[grp]) acc[grp] = []
+      if (!acc[grp].includes(cat.name)) acc[grp].push(cat.name)
+    })
     return acc
-  }, {})
+  })()
 
   const totalExpense = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
 
