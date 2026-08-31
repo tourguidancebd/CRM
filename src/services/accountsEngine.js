@@ -57,80 +57,9 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
 ]
 
 /**
- * Initial Default Accounts (Bank, Cash, Mobile Banking)
+ * Initial Default Accounts - Fresh & Empty
  */
-export const DEFAULT_ACCOUNTS = [
-  {
-    id: 'acc-cash-main',
-    name: 'Main Office Cash Vault',
-    type: 'cash',
-    accountNumber: 'CASH-MAIN-01',
-    branch: 'Head Office, Dhaka',
-    openingBalance: 25000,
-    currentBalance: 25000,
-    responsiblePerson: 'Accounts Manager',
-    status: 'Active',
-    notes: 'Primary petty cash and daily cash collection vault'
-  },
-  {
-    id: 'acc-bank-islami',
-    name: 'Islami Bank Bangladesh Ltd',
-    type: 'bank',
-    accountName: 'Tour Guidance BD',
-    accountNumber: '20501122334455',
-    accountType: 'Current Account',
-    branch: 'Gulshan Branch, Dhaka',
-    routingNumber: '125271890',
-    swiftCode: 'IBBLBDDH',
-    openingBalance: 150000,
-    currentBalance: 150000,
-    contactNumber: '+880 1700-000000',
-    status: 'Active',
-    notes: 'Primary corporate business bank account'
-  },
-  {
-    id: 'acc-bank-city',
-    name: 'The City Bank Limited',
-    type: 'bank',
-    accountName: 'Tour Guidance BD Ltd',
-    accountNumber: '1102938475601',
-    accountType: 'Business Account',
-    branch: 'Banani Branch, Dhaka',
-    routingNumber: '225271991',
-    swiftCode: 'CIYBLBDDH',
-    openingBalance: 75000,
-    currentBalance: 75000,
-    contactNumber: '+880 1800-000000',
-    status: 'Active',
-    notes: 'Secondary bank account for ticket issuing and disbursements'
-  },
-  {
-    id: 'acc-mobile-bkash',
-    name: 'bKash Merchant Account',
-    type: 'mobile',
-    provider: 'bKash',
-    mobileNumber: '01800000000',
-    accountType: 'Merchant Account',
-    accountHolder: 'Tour Guidance BD',
-    openingBalance: 18500,
-    currentBalance: 18500,
-    status: 'Active',
-    notes: 'Online customer booking payment gateway'
-  },
-  {
-    id: 'acc-mobile-nagad',
-    name: 'Nagad Business Account',
-    type: 'mobile',
-    provider: 'Nagad',
-    mobileNumber: '01700000000',
-    accountType: 'Merchant / Personal',
-    accountHolder: 'Tour Guidance BD',
-    openingBalance: 12000,
-    currentBalance: 12000,
-    status: 'Active',
-    notes: 'Direct customer collection via Nagad'
-  }
-]
+export const DEFAULT_ACCOUNTS = []
 
 /**
  * Unified Transaction Ledger Engine
@@ -576,20 +505,20 @@ export function generateBalanceSheet({
   const totalMobile = mobileAccounts.reduce((s, a) => s + (parseFloat(a.currentBalance) || 0), 0)
   const totalReceivables = customerReceivables.reduce((s, c) => s + (parseFloat(c.totalDue) || 0), 0)
 
-  const otherAssets = 45000 // Office Equipment, IT Assets, Furniture
+  const otherAssets = 0
 
   const currentAssets = totalCash + totalBank + totalMobile + totalReceivables
   const totalAssets = currentAssets + otherAssets
 
   // 2. Liabilities
   const totalPayables = vendorPayables.reduce((s, v) => s + (parseFloat(v.totalDue) || 0), 0)
-  const customerAdvances = 15000 // Unearned booking deposits
-  const taxPayable = 5000
+  const customerAdvances = 0
+  const taxPayable = 0
   const totalLiabilities = totalPayables + customerAdvances + taxPayable
 
   // 3. Equity
-  const ownerCapital = 200000
-  const retainedEarnings = totalAssets - totalLiabilities - ownerCapital
+  const ownerCapital = totalAssets >= totalLiabilities ? totalAssets - totalLiabilities : 0
+  const retainedEarnings = 0
   const totalEquity = ownerCapital + retainedEarnings
 
   const isBalanced = Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 1
@@ -731,7 +660,7 @@ export function generateCashFlowStatement({
   const netOperatingCash = customerCollections - (supplierDisbursements + operationalExpenses)
 
   // 2. Investing Activities
-  const assetPurchases = 15000 // Furniture / hardware investment
+  const assetPurchases = 0
   const netInvestingCash = -assetPurchases
 
   // 3. Financing Activities
@@ -740,7 +669,7 @@ export function generateCashFlowStatement({
   const netFinancingCash = ownerInvestments - ownerDrawings
 
   const netCashChange = netOperatingCash + netInvestingCash + netFinancingCash
-  const openingCash = 100000
+  const openingCash = 0
   const closingCash = openingCash + netCashChange
 
   return {

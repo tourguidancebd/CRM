@@ -3,13 +3,15 @@ import { useAccounts } from '../../contexts/AccountsContext'
 import { useSettings } from '../../contexts/SettingsContext'
 import { useToast } from '../../hooks/useToast'
 import { Modal } from '../../components/common/Modal'
+import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 
 export default function AccountsSettings() {
   const {
     chartOfAccounts,
     fiscalYear,
     updateChartOfAccounts,
-    updateFiscalYear
+    updateFiscalYear,
+    clearAllAccountsData
   } = useAccounts()
 
   const { success, error: toastError } = useToast()
@@ -17,6 +19,7 @@ export default function AccountsSettings() {
   const [coaSearch, setCoaSearch] = useState('')
   const [coaTypeFilter, setCoaTypeFilter] = useState('ALL')
   const [coaModalOpen, setCoaModalOpen] = useState(false)
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const [newCoa, setNewCoa] = useState({
@@ -286,6 +289,39 @@ export default function AccountsSettings() {
           </div>
         </form>
       </Modal>
+
+      {/* Danger Zone: Clear & Reset Accounts */}
+      <div className="card" style={{ border: '1px solid rgba(239,100,97,0.3)', background: 'rgba(239,100,97,0.02)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h4 style={{ color: 'var(--red)', margin: '0 0 4px 0', fontSize: '0.95rem' }}>
+              ⚠️ Danger Zone: Clear & Reset Accounts
+            </h4>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Reset all bank accounts, cash vaults, mobile wallets, transfers, deposits, and journal entries to start completely fresh.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-danger"
+            onClick={() => setResetConfirmOpen(true)}
+          >
+            🗑️ Clear & Reset All Accounts
+          </button>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        isOpen={resetConfirmOpen}
+        onClose={() => setResetConfirmOpen(false)}
+        onConfirm={async () => {
+          await clearAllAccountsData()
+          success('All accounts data has been wiped and reset to a clean, fresh state!')
+          setResetConfirmOpen(false)
+        }}
+        title="Wipe & Reset All Accounts Data"
+        message="Are you sure you want to delete all accounts, transfers, deposits, withdrawals, and journal entries? This will give you a completely fresh, empty accounting ledger."
+      />
     </div>
   )
 }

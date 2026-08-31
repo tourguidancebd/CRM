@@ -223,6 +223,25 @@ export function AccountsProvider({ children }) {
     await persistAccountsData({ fiscalYear: fy })
   }
 
+  const clearAllAccountsData = async () => {
+    setAccounts([])
+    setTransfers([])
+    setDeposits([])
+    setWithdrawals([])
+    setJournalEntries([])
+    setBankReconciliations([])
+    setCashClosings([])
+    await persistAccountsData({
+      accounts: [],
+      transfers: [],
+      deposits: [],
+      withdrawals: [],
+      journalEntries: [],
+      bankReconciliations: [],
+      cashClosings: []
+    })
+  }
+
   // --- Dynamic Live Derived Accounting State ---
   const unifiedTransactions = buildUnifiedTransactions({
     accounts,
@@ -313,6 +332,7 @@ export function AccountsProvider({ children }) {
       saveBankReconciliation,
       updateChartOfAccounts,
       updateFiscalYear,
+      clearAllAccountsData,
       reloadAccounts: loadAccountsData
     }}>
       {children}

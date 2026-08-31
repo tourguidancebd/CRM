@@ -191,7 +191,22 @@ export default function AccountsMaster() {
               </tr>
             </thead>
             <tbody>
-              {filteredAccounts.map(acc => (
+              {filteredAccounts.length === 0 ? (
+                <tr>
+                  <td colSpan={10} style={{ textAlign: 'center', padding: '40px 20px' }}>
+                    <div style={{ fontSize: '2.4rem', marginBottom: 10 }}>🏦</div>
+                    <div style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', marginBottom: 6 }}>
+                      No Accounts Created Yet
+                    </div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: 16 }}>
+                      Start fresh by adding your corporate bank accounts, physical cash vaults, or mobile banking wallets (bKash / Nagad).
+                    </div>
+                    <button className="btn btn-primary" onClick={() => openCreate(activeTab === 'all' ? 'bank' : activeTab)}>
+                      + Add New Account
+                    </button>
+                  </td>
+                </tr>
+              ) : filteredAccounts.map(acc => (
                 <tr key={acc.id}>
                   <td>
                     <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{acc.name}</div>
