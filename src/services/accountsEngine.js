@@ -61,6 +61,20 @@ export const DEFAULT_CHART_OF_ACCOUNTS = [
  */
 export const DEFAULT_ACCOUNTS = []
 
+// Helper to safe-round monetary numbers to 2 decimal places
+export const round2 = (num) => Math.round((parseFloat(num) || 0) * 100) / 100
+
+// Helper to robustly match account by name or id with bidirectional fuzzy match
+export function findMatchingAccount(accounts = [], identifier = '') {
+  if (!identifier || accounts.length === 0) return null
+  const target = String(identifier).trim().toLowerCase()
+  return accounts.find(a => {
+    const aName = (a.name || '').toLowerCase()
+    const aId = (a.id || '').toLowerCase()
+    return aId === target || aName === target || aName.includes(target) || target.includes(aName)
+  }) || null
+}
+
 /**
  * Unified Transaction Ledger Engine
  * Aggregates all financial streams:
@@ -88,39 +102,37 @@ export function buildUnifiedTransactions({
   // 1. Receipts (Money In / Debit Asset / Credit Revenue or A/R)
   receipts.forEach(r => {
     let matchedAcc = null
-    let method = 'Cash'
+    let method = 'Bank / Cash'
     let cleanDesc = r.note || 'Customer payment received'
 
     if (r.note) {
-      const methodMatch = r.note.match(/\[Paid Via:\s*([^\]]+)\]/)
+      const methodMatch = r.note.match(/\[Paid Via:\s*([^\]]+)\]/i)
       if (methodMatch) method = methodMatch[1].trim()
 
-      const accMatch = r.note.match(/\[Received To:\s*([^\]]+)\]/)
+      const accMatch = r.note.match(/\[Received To:\s*([^\]]+)\]/i)
       if (accMatch) {
-        const parsedName = accMatch[1].trim().toLowerCase()
-        matchedAcc = accounts.find(a => a.name.toLowerCase() === parsedName || a.id.toLowerCase() === parsedName || a.name.toLowerCase().includes(parsedName))
+        matchedAcc = findMatchingAccount(accounts, accMatch[1].trim())
       }
     }
     if (!matchedAcc && r.account_id) {
-      matchedAcc = accounts.find(a => a.id === r.account_id)
+      matchedAcc = findMatchingAccount(accounts, r.account_id)
     }
-    const acc = matchedAcc || accounts[0]
-    const accId = acc?.id || 'acc-cash-main'
-    const accName = acc?.name || 'Main Office Cash Vault'
+    const acc = matchedAcc || accounts[0] || { id: 'acc-cash-main', name: 'Main Office Cash Vault', type: 'cash' }
+    const amt = round2(r.amount)
 
     list.push({
       id: r.id,
       date: r.date || today(),
       type: 'Income',
       category: 'Customer Collection',
-      accountId: accId,
-      accountName: accName,
-      accountType: acc?.type || 'cash',
+      accountId: acc.id,
+      accountName: acc.name,
+      accountType: acc.type || 'cash',
       entityName: r.customers?.name || 'Customer',
       entityType: 'Customer',
-      debit: parseFloat(r.amount) || 0, // Asset increases
+      debit: amt, // Asset increases
       credit: 0,
-      amount: parseFloat(r.amount) || 0,
+      amount: amt,
       paymentMethod: method,
       reference: r.invoice_id ? `Invoice: ${r.invoice_id}` : 'Direct Receipt',
       description: cleanDesc,
@@ -129,23 +141,37 @@ export function buildUnifiedTransactions({
     })
   })
 
-  // 2. Expenses (Money Out)
+  // 2. Expenses (Money Out / Credit Asset)
   expenses.forEach(e => {
-    const accId = e.account_id || (e.payment_method === 'bKash' ? 'acc-mobile-bkash' : e.payment_method === 'Nagad' ? 'acc-mobile-nagad' : e.payment_method === 'Bank Transfer' ? 'acc-bank-islami' : 'acc-cash-main')
-    const acc = accounts.find(a => a.id === accId) || accounts[0]
+    let matchedAcc = null
+    if (e.note) {
+      const match = e.note.match(/\[Paid From:\s*([^\]]+)\]/i)
+      if (match) matchedAcc = findMatchingAccount(accounts, match[1].trim())
+    }
+    if (!matchedAcc && e.account_id) {
+      matchedAcc = findMatchingAccount(accounts, e.account_id)
+    }
+    if (!matchedAcc && e.payment_method) {
+      const pm = e.payment_method.toLowerCase()
+      matchedAcc = accounts.find(a => a.name.toLowerCase().includes(pm) || a.type === pm)
+    }
+
+    const acc = matchedAcc || accounts[0] || { id: 'acc-cash-main', name: 'Main Office Cash Vault', type: 'cash' }
+    const amt = round2(e.amount)
+
     list.push({
       id: e.id,
       date: e.date || today(),
       type: 'Expense',
       category: e.category || 'Operating Expense',
-      accountId: acc?.id || 'acc-cash-main',
-      accountName: acc?.name || 'Cash Vault',
-      accountType: acc?.type || 'cash',
+      accountId: acc.id,
+      accountName: acc.name,
+      accountType: acc.type || 'cash',
       entityName: e.paid_to || e.vendor || 'Vendor / Payee',
       entityType: 'Vendor',
       debit: 0,
-      credit: parseFloat(e.amount) || 0, // Asset decreases
-      amount: parseFloat(e.amount) || 0,
+      credit: amt, // Asset decreases
+      amount: amt,
       paymentMethod: e.payment_method || 'Cash',
       reference: e.id,
       description: e.note || e.description || 'Expense voucher disbursed',
@@ -159,33 +185,30 @@ export function buildUnifiedTransactions({
     let matchedAcc = null
     let cleanDesc = vp.note || 'Vendor payment settlement'
     if (vp.note) {
-      const match = vp.note.match(/^\[Paid From:\s*([^\]]+)\]\s*([\s\S]*)$/)
+      const match = vp.note.match(/\[Paid From:\s*([^\]]+)\]/i)
       if (match) {
-        const parsedName = match[1].trim().toLowerCase()
-        cleanDesc = match[2].trim() || 'Vendor payment settlement'
-        matchedAcc = accounts.find(a => a.name.toLowerCase() === parsedName || a.id.toLowerCase() === parsedName || a.name.toLowerCase().includes(parsedName))
+        matchedAcc = findMatchingAccount(accounts, match[1].trim())
       }
     }
     if (!matchedAcc && vp.account_id) {
-      matchedAcc = accounts.find(a => a.id === vp.account_id)
+      matchedAcc = findMatchingAccount(accounts, vp.account_id)
     }
-    const acc = matchedAcc || accounts[0]
-    const accId = acc?.id || 'acc-main-cash'
-    const accName = acc?.name || 'Main Office Cash Vault'
+    const acc = matchedAcc || accounts[0] || { id: 'acc-cash-main', name: 'Main Office Cash Vault', type: 'bank' }
+    const amt = round2(vp.amount)
 
     list.push({
       id: vp.id,
       date: vp.date || today(),
       type: 'Payment',
       category: 'Supplier Disbursement',
-      accountId: accId,
-      accountName: accName,
-      accountType: acc?.type || 'bank',
+      accountId: acc.id,
+      accountName: acc.name,
+      accountType: acc.type || 'bank',
       entityName: vp.vendors?.name || 'Vendor',
       entityType: 'Vendor',
       debit: 0,
-      credit: parseFloat(vp.amount) || 0, // Asset decreases
-      amount: parseFloat(vp.amount) || 0,
+      credit: amt, // Asset decreases
+      amount: amt,
       paymentMethod: 'Bank Transfer / Cash',
       reference: `VP: ${vp.id}`,
       description: cleanDesc,
@@ -198,8 +221,8 @@ export function buildUnifiedTransactions({
   transfers.forEach(tr => {
     const fromAcc = accounts.find(a => a.id === tr.fromAccountId)
     const toAcc = accounts.find(a => a.id === tr.toAccountId)
-    const amt = parseFloat(tr.amount) || 0
-    const fee = parseFloat(tr.fee) || 0
+    const amt = round2(tr.amount)
+    const fee = round2(tr.fee)
 
     // Outflow entry for FROM account
     list.push({
@@ -213,7 +236,7 @@ export function buildUnifiedTransactions({
       entityName: toAcc?.name || 'Receiving Account',
       entityType: 'Account',
       debit: 0,
-      credit: amt + fee,
+      credit: round2(amt + fee),
       amount: amt,
       fee,
       paymentMethod: 'Internal Transfer',
@@ -248,20 +271,21 @@ export function buildUnifiedTransactions({
 
   // 5. Deposits
   deposits.forEach(dep => {
-    const acc = accounts.find(a => a.id === dep.accountId) || accounts[0]
+    const acc = accounts.find(a => a.id === dep.accountId) || accounts[0] || { id: dep.accountId, name: 'Account' }
+    const amt = round2(dep.amount)
     list.push({
       id: dep.id,
       date: dep.date || today(),
       type: 'Deposit',
       category: dep.depositType || 'Capital Deposit',
       accountId: dep.accountId,
-      accountName: acc?.name || 'Account',
-      accountType: acc?.type || 'bank',
+      accountName: acc.name,
+      accountType: acc.type || 'bank',
       entityName: dep.source || 'Depositor / Owner',
       entityType: 'Depositor',
-      debit: parseFloat(dep.amount) || 0,
+      debit: amt,
       credit: 0,
-      amount: parseFloat(dep.amount) || 0,
+      amount: amt,
       paymentMethod: dep.paymentMethod || 'Deposit',
       reference: dep.reference || dep.id,
       description: dep.description || 'Capital / Fund deposit',
@@ -272,20 +296,21 @@ export function buildUnifiedTransactions({
 
   // 6. Withdrawals
   withdrawals.forEach(w => {
-    const acc = accounts.find(a => a.id === w.accountId) || accounts[0]
+    const acc = accounts.find(a => a.id === w.accountId) || accounts[0] || { id: w.accountId, name: 'Account' }
+    const amt = round2(w.amount)
     list.push({
       id: w.id,
       date: w.date || today(),
       type: 'Withdrawal',
       category: w.withdrawalType || 'Owner Drawing',
       accountId: w.accountId,
-      accountName: acc?.name || 'Account',
-      accountType: acc?.type || 'bank',
+      accountName: acc.name,
+      accountType: acc.type || 'bank',
       entityName: w.withdrawnBy || 'Owner / Partner',
       entityType: 'Partner',
       debit: 0,
-      credit: parseFloat(w.amount) || 0,
-      amount: parseFloat(w.amount) || 0,
+      credit: amt,
+      amount: amt,
       paymentMethod: 'Withdrawal',
       reference: w.reference || w.id,
       description: w.purpose || 'Owner withdrawal / Drawings',
@@ -298,6 +323,8 @@ export function buildUnifiedTransactions({
   journalEntries.forEach(j => {
     (j.lines || []).forEach((line, idx) => {
       const acc = accounts.find(a => a.id === line.accountId)
+      const dr = round2(line.debit)
+      const cr = round2(line.credit)
       list.push({
         id: `${j.id}-L${idx + 1}`,
         date: j.date || today(),
@@ -308,9 +335,9 @@ export function buildUnifiedTransactions({
         accountType: acc?.type || 'ledger',
         entityName: j.reference || 'General Ledger',
         entityType: 'Journal',
-        debit: parseFloat(line.debit) || 0,
-        credit: parseFloat(line.credit) || 0,
-        amount: Math.max(parseFloat(line.debit) || 0, parseFloat(line.credit) || 0),
+        debit: dr,
+        credit: cr,
+        amount: Math.max(dr, cr),
         paymentMethod: 'Journal Voucher',
         reference: j.id,
         description: line.narration || j.description || 'Manual Journal adjustment',
@@ -329,13 +356,13 @@ export function buildUnifiedTransactions({
  */
 export function calculateAccountBalances(accounts = [], transactions = []) {
   return accounts.map(acc => {
-    const opening = parseFloat(acc.openingBalance) || 0
+    const opening = round2(acc.openingBalance)
     const accTx = transactions.filter(t => t.accountId === acc.id)
 
-    const totalInflow = accTx.reduce((sum, t) => sum + (parseFloat(t.debit) || 0), 0)
-    const totalOutflow = accTx.reduce((sum, t) => sum + (parseFloat(t.credit) || 0), 0)
+    const totalInflow = round2(accTx.reduce((sum, t) => sum + (parseFloat(t.debit) || 0), 0))
+    const totalOutflow = round2(accTx.reduce((sum, t) => sum + (parseFloat(t.credit) || 0), 0))
 
-    const currentBalance = opening + totalInflow - totalOutflow
+    const currentBalance = round2(opening + totalInflow - totalOutflow)
 
     return {
       ...acc,
@@ -354,7 +381,7 @@ export function calculateCustomerReceivables(invoices = [], receipts = []) {
 
   invoices.forEach(inv => {
     const custId = inv.customer_id || 'unassigned'
-    const custName = inv.customers?.name || 'Walk-in Customer'
+    const custName = inv.customers?.name || 'Customer'
     const custMobile = inv.customers?.mobile || '—'
 
     if (!customerMap[custId]) {
@@ -371,13 +398,13 @@ export function calculateCustomerReceivables(invoices = [], receipts = []) {
     }
 
     const invReceipts = receipts.filter(r => r.invoice_id === inv.id)
-    const paid = invReceipts.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-    const grandTotal = parseFloat(inv.grand_total) || 0
-    const due = Math.max(0, grandTotal - paid)
+    const paid = round2(invReceipts.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0))
+    const grandTotal = round2(inv.grand_total)
+    const due = round2(Math.max(0, grandTotal - paid))
 
-    customerMap[custId].totalInvoiced += grandTotal
-    customerMap[custId].totalPaid += paid
-    customerMap[custId].totalDue += due
+    customerMap[custId].totalInvoiced = round2(customerMap[custId].totalInvoiced + grandTotal)
+    customerMap[custId].totalPaid = round2(customerMap[custId].totalPaid + paid)
+    customerMap[custId].totalDue = round2(customerMap[custId].totalDue + due)
     customerMap[custId].invoicesCount += 1
     customerMap[custId].invoices.push({
       ...inv,
@@ -387,13 +414,13 @@ export function calculateCustomerReceivables(invoices = [], receipts = []) {
     })
   })
 
-  // Also include general receipts
+  // Also include general unallocated receipts
   receipts.filter(r => !r.invoice_id).forEach(gr => {
     const custId = gr.customer_id
     if (custId && customerMap[custId]) {
-      const amt = parseFloat(gr.amount) || 0
-      customerMap[custId].totalPaid += amt
-      customerMap[custId].totalDue = Math.max(0, customerMap[custId].totalDue - amt)
+      const amt = round2(gr.amount)
+      customerMap[custId].totalPaid = round2(customerMap[custId].totalPaid + amt)
+      customerMap[custId].totalDue = round2(Math.max(0, customerMap[custId].totalDue - amt))
     }
   })
 
@@ -406,14 +433,21 @@ export function calculateCustomerReceivables(invoices = [], receipts = []) {
 export function calculateVendorPayables(vendors = [], vendorPayments = [], expenses = []) {
   return vendors.map(v => {
     // Total expenses disbursed to this vendor
-    const vExpenses = expenses.filter(e => (e.paid_to && e.paid_to.toLowerCase() === v.name.toLowerCase()) || (e.vendor && e.vendor.toLowerCase() === v.name.toLowerCase()))
-    const totalBilled = vExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
+    const vExpenses = expenses.filter(e => {
+      const vName = (v.name || '').toLowerCase()
+      return (
+        (e.vendor_id && e.vendor_id === v.id) ||
+        (e.paid_to && e.paid_to.toLowerCase() === vName) ||
+        (e.vendor && e.vendor.toLowerCase() === vName)
+      )
+    })
+    const totalBilled = round2(vExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0))
 
     // Total payments made
     const vPayments = vendorPayments.filter(vp => vp.vendor_id === v.id)
-    const totalPaid = vPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+    const totalPaid = round2(vPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0))
 
-    const totalDue = Math.max(0, totalBilled - totalPaid)
+    const totalDue = round2(Math.max(0, totalBilled - totalPaid))
 
     return {
       vendorId: v.id,
@@ -534,28 +568,28 @@ export function generateBalanceSheet({
   const bankAccounts = calculatedAccounts.filter(a => a.type === 'bank')
   const mobileAccounts = calculatedAccounts.filter(a => a.type === 'mobile')
 
-  const totalCash = cashAccounts.reduce((s, a) => s + (parseFloat(a.currentBalance) || 0), 0)
-  const totalBank = bankAccounts.reduce((s, a) => s + (parseFloat(a.currentBalance) || 0), 0)
-  const totalMobile = mobileAccounts.reduce((s, a) => s + (parseFloat(a.currentBalance) || 0), 0)
-  const totalReceivables = customerReceivables.reduce((s, c) => s + (parseFloat(c.totalDue) || 0), 0)
+  const totalCash = round2(cashAccounts.reduce((s, a) => s + (parseFloat(a.currentBalance) || 0), 0))
+  const totalBank = round2(bankAccounts.reduce((s, a) => s + (parseFloat(a.currentBalance) || 0), 0))
+  const totalMobile = round2(mobileAccounts.reduce((s, a) => s + (parseFloat(a.currentBalance) || 0), 0))
+  const totalReceivables = round2(customerReceivables.reduce((s, c) => s + (parseFloat(c.totalDue) || 0), 0))
 
   const otherAssets = 0
 
-  const currentAssets = totalCash + totalBank + totalMobile + totalReceivables
-  const totalAssets = currentAssets + otherAssets
+  const currentAssets = round2(totalCash + totalBank + totalMobile + totalReceivables)
+  const totalAssets = round2(currentAssets + otherAssets)
 
   // 2. Liabilities
-  const totalPayables = vendorPayables.reduce((s, v) => s + (parseFloat(v.totalDue) || 0), 0)
+  const totalPayables = round2(vendorPayables.reduce((s, v) => s + (parseFloat(v.totalDue) || 0), 0))
   const customerAdvances = 0
   const taxPayable = 0
-  const totalLiabilities = totalPayables + customerAdvances + taxPayable
+  const totalLiabilities = round2(totalPayables + customerAdvances + taxPayable)
 
-  // 3. Equity
-  const ownerCapital = totalAssets >= totalLiabilities ? totalAssets - totalLiabilities : 0
+  // 3. Equity (Owner's Equity + Retained Net Profit)
+  const ownerCapital = round2(totalAssets >= totalLiabilities ? totalAssets - totalLiabilities : 0)
   const retainedEarnings = 0
-  const totalEquity = ownerCapital + retainedEarnings
+  const totalEquity = round2(ownerCapital + retainedEarnings)
 
-  const isBalanced = Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 1
+  const isBalanced = Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.05
 
   return {
     assets: {
@@ -580,7 +614,7 @@ export function generateBalanceSheet({
       retainedEarnings,
       totalEquity
     },
-    totalLiabilitiesAndEquity: totalLiabilities + totalEquity,
+    totalLiabilitiesAndEquity: round2(totalLiabilities + totalEquity),
     isBalanced
   }
 }
@@ -611,17 +645,17 @@ export function generateGeneralLedger({
   const sorted = [...filtered].sort((a, b) => new Date(a.date) - new Date(b.date))
 
   const entriesWithBalance = sorted.map(t => {
-    const dr = parseFloat(t.debit) || 0
-    const cr = parseFloat(t.credit) || 0
-    running += (dr - cr)
+    const dr = round2(t.debit)
+    const cr = round2(t.credit)
+    running = round2(running + dr - cr)
     return {
       ...t,
       runningBalance: running
     }
   })
 
-  const totalDebit = sorted.reduce((s, t) => s + (parseFloat(t.debit) || 0), 0)
-  const totalCredit = sorted.reduce((s, t) => s + (parseFloat(t.credit) || 0), 0)
+  const totalDebit = round2(sorted.reduce((s, t) => s + (parseFloat(t.debit) || 0), 0))
+  const totalCredit = round2(sorted.reduce((s, t) => s + (parseFloat(t.credit) || 0), 0))
 
   return {
     entries: entriesWithBalance.reverse(), // Show newest first for table
@@ -645,15 +679,15 @@ export function generateTrialBalance({
       (t.accountName && t.accountName.toLowerCase().includes(coa.name.toLowerCase().slice(0, 8)))
     )
 
-    let dr = matchedTx.reduce((s, t) => s + (parseFloat(t.debit) || 0), 0)
-    let cr = matchedTx.reduce((s, t) => s + (parseFloat(t.credit) || 0), 0)
+    let dr = round2(matchedTx.reduce((s, t) => s + (parseFloat(t.debit) || 0), 0))
+    let cr = round2(matchedTx.reduce((s, t) => s + (parseFloat(t.credit) || 0), 0))
 
     if (coa.type === 'Asset' || coa.type === 'Expense') {
-      if (dr > cr) { dr = dr - cr; cr = 0 }
-      else { cr = cr - dr; dr = 0 }
+      if (dr > cr) { dr = round2(dr - cr); cr = 0 }
+      else { cr = round2(cr - dr); dr = 0 }
     } else {
-      if (cr > dr) { cr = cr - dr; dr = 0 }
-      else { dr = dr - cr; cr = 0 }
+      if (cr > dr) { cr = round2(cr - dr); dr = 0 }
+      else { dr = round2(dr - cr); dr = 0 }
     }
 
     return {
@@ -663,10 +697,10 @@ export function generateTrialBalance({
     }
   }).filter(line => line.debit > 0 || line.credit > 0)
 
-  const totalDebit = lines.reduce((s, l) => s + l.debit, 0)
-  const totalCredit = lines.reduce((s, l) => s + l.credit, 0)
-  const difference = Math.abs(totalDebit - totalCredit)
-  const isBalanced = difference < 1
+  const totalDebit = round2(lines.reduce((s, l) => s + l.debit, 0))
+  const totalCredit = round2(lines.reduce((s, l) => s + l.credit, 0))
+  const difference = round2(Math.abs(totalDebit - totalCredit))
+  const isBalanced = difference < 0.05
 
   return {
     lines,
@@ -688,23 +722,23 @@ export function generateCashFlowStatement({
   withdrawals = []
 }) {
   // 1. Operating Activities
-  const customerCollections = receipts.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
-  const supplierDisbursements = vendorPayments.reduce((s, vp) => s + (parseFloat(vp.amount) || 0), 0)
-  const operationalExpenses = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
-  const netOperatingCash = customerCollections - (supplierDisbursements + operationalExpenses)
+  const customerCollections = round2(receipts.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0))
+  const supplierDisbursements = round2(vendorPayments.reduce((s, vp) => s + (parseFloat(vp.amount) || 0), 0))
+  const operationalExpenses = round2(expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0))
+  const netOperatingCash = round2(customerCollections - (supplierDisbursements + operationalExpenses))
 
   // 2. Investing Activities
   const assetPurchases = 0
   const netInvestingCash = -assetPurchases
 
   // 3. Financing Activities
-  const ownerInvestments = deposits.reduce((s, d) => s + (parseFloat(d.amount) || 0), 0)
-  const ownerDrawings = withdrawals.reduce((s, w) => s + (parseFloat(w.amount) || 0), 0)
-  const netFinancingCash = ownerInvestments - ownerDrawings
+  const ownerInvestments = round2(deposits.reduce((s, d) => s + (parseFloat(d.amount) || 0), 0))
+  const ownerDrawings = round2(withdrawals.reduce((s, w) => s + (parseFloat(w.amount) || 0), 0))
+  const netFinancingCash = round2(ownerInvestments - ownerDrawings)
 
-  const netCashChange = netOperatingCash + netInvestingCash + netFinancingCash
+  const netCashChange = round2(netOperatingCash + netInvestingCash + netFinancingCash)
   const openingCash = 0
-  const closingCash = openingCash + netCashChange
+  const closingCash = round2(openingCash + netCashChange)
 
   return {
     operating: {
