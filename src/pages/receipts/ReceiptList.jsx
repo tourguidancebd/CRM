@@ -37,16 +37,28 @@ export default function ReceiptList() {
   const load = useCallback(async () => {
     setLoading(true)
     const [rcptRes, custRes, invRes] = await Promise.all([
-      supabase.from('receipts').select('*, customers(name, mobile), invoices(id, grand_total, date)').order('created_at', { ascending: false }),
+      supabase.from('receipts').select('*, customers(name, mobile)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, mobile').order('name'),
       supabase.from('invoices').select('id, customer_id, grand_total, date').order('created_at', { ascending: false }),
     ])
 
+    const allReceipts = rcptRes.data || []
+    const allInvoices = invRes.data || []
+
+    // Attach receipts to invoices to calculate total received & remaining due per invoice
+    const invoicesWithDue = allInvoices.map(inv => {
+      const invRcpts = allReceipts.filter(r => r.invoice_id === inv.id)
+      const paid = invRcpts.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0)
+      const grandTotal = parseFloat(inv.grand_total) || 0
+      const due = Math.max(0, grandTotal - paid)
+      return { ...inv, paid, due, receipts: invRcpts }
+    })
+
     if (rcptRes.error) toastError('Failed to load receipts: ' + rcptRes.error.message)
-    else setReceipts(rcptRes.data || [])
+    else setReceipts(allReceipts)
 
     if (custRes.data) setCustomers(custRes.data)
-    if (invRes.data) setInvoices(invRes.data)
+    setInvoices(invoicesWithDue)
 
     setLoading(false)
   }, [toastError])
@@ -137,16 +149,32 @@ export default function ReceiptList() {
   }
 
   const handlePrint = (rcpt) => {
-    const html = buildReceiptHtml(rcpt, settings, currencySymbol)
+    const inv = invoices.find(i => i.id === rcpt.invoice_id)
+    const invReceipts = receipts.filter(r => r.invoice_id === rcpt.invoice_id)
+    const html = buildReceiptHtml(rcpt, inv, invReceipts, settings, currencySymbol)
     printHtml(html, `Receipt-${rcpt.id}`)
   }
 
   const handleDownload = (rcpt) => {
-    const html = buildReceiptHtml(rcpt, settings, currencySymbol)
+    const inv = invoices.find(i => i.id === rcpt.invoice_id)
+    const invReceipts = receipts.filter(r => r.invoice_id === rcpt.invoice_id)
+    const html = buildReceiptHtml(rcpt, inv, invReceipts, settings, currencySymbol)
     downloadHtml(html, `Receipt-${rcpt.id}`)
   }
 
   const customerInvoices = invoices.filter(i => i.customer_id === form.customer_id)
+  const selectedInvoice = customerInvoices.find(i => i.id === form.invoice_id)
+
+  // Calculations for chosen invoice in modal
+  const invoiceGrandTotal = selectedInvoice ? (parseFloat(selectedInvoice.grand_total) || 0) : 0
+  const alreadyPaidExcludingCurrent = selectedInvoice
+    ? (selectedInvoice.receipts || [])
+        .filter(r => r.id !== editingId)
+        .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+    : 0
+  const currentDueBeforeThis = Math.max(0, invoiceGrandTotal - alreadyPaidExcludingCurrent)
+  const currentEnteredAmount = parseFloat(form.amount) || 0
+  const remainingDueAfterThis = Math.max(0, currentDueBeforeThis - currentEnteredAmount)
 
   const filtered = receipts.filter(r => {
     if (!search) return true
@@ -165,7 +193,7 @@ export default function ReceiptList() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Money Receipts</h1>
-          <p className="page-subtitle">Track customer payments, issue official branded money receipts</p>
+          <p className="page-subtitle">Track customer payments, view remaining amounts, and issue official branded money receipts</p>
         </div>
         <button className="btn btn-primary" onClick={openCreate} id="new-receipt-btn">
           <PlusIcon /> Create Money Receipt
@@ -204,49 +232,63 @@ export default function ReceiptList() {
                   <th>Customer</th>
                   <th>Phone</th>
                   <th>Linked Invoice</th>
+                  <th className="text-right">Invoice Total</th>
                   <th className="text-right">Amount Received</th>
+                  <th className="text-right">Remaining Due</th>
                   <th>Payment Note</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(r => (
-                  <tr key={r.id}>
-                    <td className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{r.id}</td>
-                    <td>{formatDate(r.date)}</td>
-                    <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{r.customers?.name || '—'}</td>
-                    <td className="mono">{r.customers?.mobile || '—'}</td>
-                    <td>
-                      {r.invoice_id ? (
-                        <span className="mono" style={{ color: 'var(--teal)' }}>{r.invoice_id}</span>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)' }}>General Payment</span>
-                      )}
-                    </td>
-                    <td className="mono text-right" style={{ color: 'var(--teal)', fontWeight: 600, fontSize: '0.9rem' }}>
-                      {money(r.amount, currencySymbol)}
-                    </td>
-                    <td style={{ color: 'var(--text-secondary)', maxWidth: 200 }} className="truncate" title={r.note || ''}>
-                      {r.note || '—'}
-                    </td>
-                    <td>
-                      <div className="actions-col">
-                        <button className="btn btn-teal btn-sm btn-icon" onClick={() => handlePrint(r)} title="Print Receipt">
-                          <PrintIcon />
-                        </button>
-                        <button className="btn btn-ghost btn-sm btn-icon" onClick={() => handleDownload(r)} title="Download HTML">
-                          <DownloadIcon />
-                        </button>
-                        <button className="btn btn-secondary btn-sm btn-icon" onClick={() => openEdit(r)} title="Edit">
-                          <EditIcon />
-                        </button>
-                        <button className="btn btn-danger btn-sm btn-icon" onClick={() => setDeleteTarget(r)} title="Delete">
-                          <TrashIcon />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map(r => {
+                  const linkedInv = invoices.find(i => i.id === r.invoice_id)
+                  const invTotal = linkedInv ? (parseFloat(linkedInv.grand_total) || 0) : null
+                  const remainingDue = linkedInv ? linkedInv.due : null
+
+                  return (
+                    <tr key={r.id}>
+                      <td className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{r.id}</td>
+                      <td>{formatDate(r.date)}</td>
+                      <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{r.customers?.name || '—'}</td>
+                      <td className="mono">{r.customers?.mobile || '—'}</td>
+                      <td>
+                        {r.invoice_id ? (
+                          <span className="mono" style={{ color: 'var(--teal)', fontWeight: 500 }}>{r.invoice_id}</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>General Payment</span>
+                        )}
+                      </td>
+                      <td className="mono text-right" style={{ color: 'var(--text-secondary)' }}>
+                        {invTotal !== null ? money(invTotal, currencySymbol) : '—'}
+                      </td>
+                      <td className="mono text-right" style={{ color: 'var(--teal)', fontWeight: 700, fontSize: '0.9rem' }}>
+                        {money(r.amount, currencySymbol)}
+                      </td>
+                      <td className="mono text-right" style={{ fontWeight: 600, color: remainingDue > 0 ? 'var(--red)' : remainingDue === 0 ? 'var(--teal)' : 'var(--text-muted)' }}>
+                        {remainingDue !== null ? money(remainingDue, currencySymbol) : '—'}
+                      </td>
+                      <td style={{ color: 'var(--text-secondary)', maxWidth: 160 }} className="truncate" title={r.note || ''}>
+                        {r.note || '—'}
+                      </td>
+                      <td>
+                        <div className="actions-col">
+                          <button className="btn btn-teal btn-sm btn-icon" onClick={() => handlePrint(r)} title="Print Receipt">
+                            <PrintIcon />
+                          </button>
+                          <button className="btn btn-ghost btn-sm btn-icon" onClick={() => handleDownload(r)} title="Download HTML">
+                            <DownloadIcon />
+                          </button>
+                          <button className="btn btn-secondary btn-sm btn-icon" onClick={() => openEdit(r)} title="Edit">
+                            <EditIcon />
+                          </button>
+                          <button className="btn btn-danger btn-sm btn-icon" onClick={() => setDeleteTarget(r)} title="Delete">
+                            <TrashIcon />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -296,11 +338,19 @@ export default function ReceiptList() {
                 value={form.invoice_id}
                 onChange={e => {
                   const invId = e.target.value
-                  const chosenInv = customerInvoices.find(i => i.id === invId)
+                  const chosen = customerInvoices.find(i => i.id === invId)
+                  let dueAmt = ''
+                  if (chosen) {
+                    const prevPaid = (chosen.receipts || [])
+                      .filter(r => r.id !== editingId)
+                      .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+                    const outstanding = Math.max(0, (parseFloat(chosen.grand_total) || 0) - prevPaid)
+                    dueAmt = String(outstanding)
+                  }
                   setForm(f => ({
                     ...f,
                     invoice_id: invId,
-                    amount: (!f.amount || f.amount === '0') && chosenInv ? String(chosenInv.grand_total) : f.amount
+                    amount: dueAmt || f.amount
                   }))
                 }}
                 disabled={!form.customer_id}
@@ -308,7 +358,7 @@ export default function ReceiptList() {
                 <option value="">General Payment (Not linked)</option>
                 {customerInvoices.map(inv => (
                   <option key={inv.id} value={inv.id}>
-                    {inv.id} · {formatDate(inv.date || inv.invoice_date)} · Total: {money(inv.grand_total, currencySymbol)}
+                    {inv.id} · {formatDate(inv.date)} · Total: {money(inv.grand_total, currencySymbol)} · Due: {money(inv.due, currencySymbol)}
                   </option>
                 ))}
               </select>
@@ -325,8 +375,62 @@ export default function ReceiptList() {
             </div>
           </div>
 
+          {/* Remaining Balance Summary Breakdown Strip */}
+          {selectedInvoice && (
+            <div style={{
+              background: 'rgba(201,162,75,0.08)',
+              border: '1px solid rgba(201,162,75,0.3)',
+              borderRadius: 8,
+              padding: '12px 16px',
+              marginBottom: 16
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, textAlign: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 2 }}>
+                    Invoice Total
+                  </div>
+                  <div className="mono" style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.92rem' }}>
+                    {money(invoiceGrandTotal, currencySymbol)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 2 }}>
+                    Already Received
+                  </div>
+                  <div className="mono" style={{ fontWeight: 700, color: 'var(--teal)', fontSize: '0.92rem' }}>
+                    {money(alreadyPaidExcludingCurrent, currencySymbol)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 2 }}>
+                    Remaining Due
+                  </div>
+                  <div className="mono" style={{
+                    fontWeight: 700,
+                    color: remainingDueAfterThis > 0 ? 'var(--red)' : 'var(--teal)',
+                    fontSize: '0.92rem'
+                  }}>
+                    {money(remainingDueAfterThis, currencySymbol)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="form-group">
-            <label className="form-label required">Amount Received ({currencySymbol})</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <label className="form-label required" style={{ margin: 0 }}>Amount Received ({currencySymbol})</label>
+              {selectedInvoice && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: '0.72rem', color: 'var(--gold)', padding: '2px 6px' }}
+                  onClick={() => setForm(f => ({ ...f, amount: String(currentDueBeforeThis) }))}
+                >
+                  Fill Remaining Due ({money(currentDueBeforeThis, currencySymbol)})
+                </button>
+              )}
+            </div>
             <input
               type="number"
               step="0.01"
@@ -344,7 +448,7 @@ export default function ReceiptList() {
             <label className="form-label">Payment Method / Note</label>
             <textarea
               className="form-textarea"
-              placeholder="e.g. Paid via bKash / Cash / Bank Transfer with reference details"
+              placeholder="e.g. Paid via bKash / Cash / Bank Transfer with transaction reference details"
               value={form.note}
               onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
               rows={3}
@@ -367,37 +471,66 @@ export default function ReceiptList() {
   )
 }
 
-function buildReceiptHtml(rcpt, settings, currencySymbol) {
+function buildReceiptHtml(rcpt, linkedInvoice, allInvoiceReceipts = [], settings, currencySymbol) {
+  const invoiceTotal = linkedInvoice ? (parseFloat(linkedInvoice.grand_total) || 0) : null
+  const totalReceivedOnInvoice = linkedInvoice
+    ? allInvoiceReceipts.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0)
+    : parseFloat(rcpt.amount) || 0
+  const remainingDue = linkedInvoice ? Math.max(0, invoiceTotal - totalReceivedOnInvoice) : 0
+
   const signatureHtml = settings?.company?.authoritySignature ? `
-    <div class="signature-section">
-      <div class="signature-block">
-        <img src="${escapeHtml(settings.company.authoritySignature)}" alt="Signature" class="signature-img" />
-        <div class="signature-line">Authorized Cashier / Officer</div>
+    <div class="signature-section" style="margin-top: 35px; display: flex; justify-content: flex-end;">
+      <div class="signature-block" style="text-align: center;">
+        <img src="${escapeHtml(settings.company.authoritySignature)}" alt="Signature" class="signature-img" style="max-height: 50px; margin-bottom: 5px;" />
+        <div class="signature-line" style="border-top: 1px solid #333; padding-top: 5px; font-size: 11px; font-weight: 600;">Authorized Cashier / Officer</div>
       </div>
     </div>` : `
-    <div class="signature-section">
-      <div class="signature-block">
-        <div style="height:60px;border-bottom:1px solid #333;width:180px;"></div>
-        <div class="signature-line">Authorized Cashier / Officer</div>
+    <div class="signature-section" style="margin-top: 35px; display: flex; justify-content: flex-end;">
+      <div class="signature-block" style="text-align: center;">
+        <div style="height:45px;border-bottom:1px solid #333;width:180px; margin-bottom: 5px;"></div>
+        <div class="signature-line" style="font-size: 11px; font-weight: 600;">Authorized Cashier / Officer</div>
       </div>
     </div>`
 
-  const content = `
-    <div class="doc-title">MONEY RECEIPT</div>
-    <div style="text-align: center; color: #666; font-size: 11px; margin-bottom: 16px;">Official Payment Acknowledgement</div>
+  const balanceBreakdownHtml = linkedInvoice ? `
+    <div style="margin: 20px 0; border: 1px solid #e2d7c0; border-radius: 8px; overflow: hidden; background: #fff;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+        <tr style="background: #faf8f3; border-bottom: 1px solid #e2d7c0;">
+          <td style="padding: 9px 14px; color: #555; font-weight: 600;">Total Invoice Amount:</td>
+          <td style="padding: 9px 14px; text-align: right; font-weight: 700; font-family: monospace; color: #222;">${money(invoiceTotal, currencySymbol)}</td>
+        </tr>
+        <tr style="background: #f2f9f6; border-bottom: 1px solid #e2d7c0;">
+          <td style="padding: 9px 14px; color: #166534; font-weight: 600;">Amount Received (This Receipt):</td>
+          <td style="padding: 9px 14px; text-align: right; font-weight: 700; font-family: monospace; color: #166534; font-size: 14px;">${money(rcpt.amount, currencySymbol)}</td>
+        </tr>
+        <tr style="background: ${remainingDue > 0 ? '#fff8f8' : '#f2f9f6'};">
+          <td style="padding: 9px 14px; color: ${remainingDue > 0 ? '#991b1b' : '#166534'}; font-weight: 700;">Remaining Due Balance:</td>
+          <td style="padding: 9px 14px; text-align: right; font-weight: 800; font-family: monospace; color: ${remainingDue > 0 ? '#991b1b' : '#166534'}; font-size: 14px;">
+            ${money(remainingDue, currencySymbol)} ${remainingDue === 0 ? '(Fully Paid)' : ''}
+          </td>
+        </tr>
+      </table>
+    </div>
+  ` : ''
 
-    <div class="doc-meta">
-      <div class="doc-meta-row"><span class="doc-meta-label">Receipt No:</span><span class="doc-meta-value">${escapeHtml(rcpt.id)}</span></div>
-      <div class="doc-meta-row"><span class="doc-meta-label">Receipt Date:</span><span class="doc-meta-value">${formatDate(rcpt.date)}</span></div>
-      <div class="doc-meta-row"><span class="doc-meta-label">Received From:</span><span class="doc-meta-value">${escapeHtml(rcpt.customers?.name || '—')}</span></div>
-      <div class="doc-meta-row"><span class="doc-meta-label">Customer Contact:</span><span class="doc-meta-value">${escapeHtml(rcpt.customers?.mobile || '—')}</span></div>
-      <div class="doc-meta-row"><span class="doc-meta-label">Invoice Ref:</span><span class="doc-meta-value">${rcpt.invoice_id ? escapeHtml(rcpt.invoice_id) : 'General Advance / Deposit'}</span></div>
-      <div class="doc-meta-row"><span class="doc-meta-label">Payment Method:</span><span class="doc-meta-value">${escapeHtml(rcpt.note || 'Cash / Electronic Transfer')}</span></div>
+  const content = `
+    <div class="doc-title" style="font-size: 20px; font-weight: 800; text-align: center; color: #0A0F1C; letter-spacing: 1px; margin-top: 10px;">MONEY RECEIPT</div>
+    <div style="text-align: center; color: #777; font-size: 11px; margin-bottom: 18px;">Official Payment Acknowledgement</div>
+
+    <div class="doc-meta" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; margin-bottom: 18px; font-size: 12px;">
+      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Receipt No:</span> <span class="doc-meta-value" style="font-weight: 700; font-family: monospace;">${escapeHtml(rcpt.id)}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Receipt Date:</span> <span class="doc-meta-value" style="font-weight: 600;">${formatDate(rcpt.date)}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Received From:</span> <span class="doc-meta-value" style="font-weight: 700;">${escapeHtml(rcpt.customers?.name || '—')}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Customer Contact:</span> <span class="doc-meta-value" style="font-family: monospace;">${escapeHtml(rcpt.customers?.mobile || '—')}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Linked Invoice:</span> <span class="doc-meta-value" style="font-family: monospace; font-weight: 600;">${rcpt.invoice_id ? escapeHtml(rcpt.invoice_id) : 'General Advance / Deposit'}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label" style="color: #666; font-weight: 600;">Payment Note:</span> <span class="doc-meta-value">${escapeHtml(rcpt.note || 'Cash / Electronic Transfer')}</span></div>
     </div>
 
-    <div style="margin: 24px 0; padding: 20px; background: #fdfaf2; border: 2px solid #C9A24B; border-radius: 8px; text-align: center;">
-      <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-bottom: 4px;">Total Amount Received</div>
-      <div style="font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; color: #0A0F1C;">
+    ${balanceBreakdownHtml}
+
+    <div style="margin: 18px 0; padding: 18px; background: #fdfaf2; border: 2px solid #C9A24B; border-radius: 8px; text-align: center;">
+      <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #666; margin-bottom: 4px;">Total Amount Received</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 800; color: #0A0F1C;">
         ${money(rcpt.amount, currencySymbol)}
       </div>
       <div style="font-size: 11px; color: #888; margin-top: 6px; font-style: italic;">
