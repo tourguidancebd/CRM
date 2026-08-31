@@ -30,8 +30,8 @@ export function Sidebar({ isOpen, onClose }) {
     navigate('/login')
   }
 
-  const userInitial = (profile?.full_name || user?.email || 'U')[0].toUpperCase()
-  const userName = profile?.full_name || user?.email?.split('@')[0] || 'User'
+  const userName = profile?.username || profile?.full_name || settings?.adminName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Super Admin'
+  const userInitial = (userName || 'A')[0].toUpperCase()
 
   const visibleItems = NAV_ITEMS.filter(item => can(item.module))
 

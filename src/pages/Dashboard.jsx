@@ -152,7 +152,7 @@ export default function Dashboard() {
       <div className="page-header">
         <div>
           <h1 className="page-title">
-            Welcome back, {profile?.full_name || user?.email?.split('@')[0] || 'Executive'}
+            Welcome back, {profile?.username || profile?.full_name || settings?.adminName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Super Admin'}
           </h1>
           <p className="page-subtitle">
             Tour Guidance BD &middot; Sales, Booking Operations & Financial Overview

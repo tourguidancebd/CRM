@@ -80,6 +80,24 @@ export function AuthProvider({ children }) {
     if (error) throw error
   }
 
+  const updateProfileName = async (newName) => {
+    if (!newName || !newName.trim()) return
+    const trimmed = newName.trim()
+    if (user?.id) {
+      try {
+        await supabase.from('profiles').update({ username: trimmed }).eq('id', user.id)
+      } catch (err) {
+        console.warn('Profile update failed:', err)
+      }
+      try {
+        await supabase.auth.updateUser({ data: { display_name: trimmed, full_name: trimmed } })
+      } catch (err) {
+        console.warn('User metadata update failed:', err)
+      }
+      setProfile(p => ({ ...p, username: trimmed, full_name: trimmed }))
+    }
+  }
+
   const role = profile?.role || 'Admin'
 
   // Permission map
@@ -104,7 +122,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, profile, role, loading,
-      signIn, signOut, updatePassword,
+      signIn, signOut, updatePassword, updateProfileName,
       can, isAdmin, isAgent, isCustomerService,
       refreshProfile: () => fetchProfile(user?.id)
     }}>

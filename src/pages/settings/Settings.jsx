@@ -8,11 +8,16 @@ import { today } from '../../utils/dateHelpers'
 
 export default function Settings() {
   const { settings, saveSettings } = useSettings()
-  const { updatePassword } = useAuth()
+  const { user, profile, updatePassword, updateProfileName } = useAuth()
   const { toasts, success, error: toastError, dismiss } = useToast()
 
   const [saving, setSaving] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
+  const [savingName, setSavingName] = useState(false)
+
+  const [adminName, setAdminName] = useState(
+    profile?.username || profile?.full_name || settings?.adminName || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Super Admin'
+  )
 
   // Settings form state
   const [form, setForm] = useState({
@@ -181,11 +186,32 @@ export default function Settings() {
     reader.readAsDataURL(file)
   }
 
+  const handleUpdateName = async (e) => {
+    if (e) e.preventDefault()
+    if (!adminName.trim()) {
+      toastError('Display Name cannot be empty')
+      return
+    }
+    setSavingName(true)
+    try {
+      await updateProfileName(adminName.trim())
+      await saveSettings({ ...form, adminName: adminName.trim() })
+      success(`Display Name updated to "${adminName.trim()}"!`)
+    } catch (err) {
+      toastError('Failed to update display name: ' + err.message)
+    } finally {
+      setSavingName(false)
+    }
+  }
+
   const handleSaveSettings = async (e) => {
     if (e) e.preventDefault()
     setSaving(true)
     try {
-      await saveSettings(form)
+      if (adminName?.trim()) {
+        await updateProfileName(adminName.trim())
+      }
+      await saveSettings({ ...form, adminName: adminName.trim() })
       success('Settings saved successfully!')
     } catch (err) {
       toastError('Failed to save settings: ' + err.message)
@@ -362,9 +388,42 @@ export default function Settings() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
-        {/* 1. Admin Profile — Change Your Password */}
+        {/* 1. Admin Profile & Greeting Name */}
         <div className="card">
-          <div className="card-title">Admin Profile — Change Your Password</div>
+          <div className="card-title">👤 Admin Profile &amp; Welcome Display Name</div>
+          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: 14 }}>
+            Customize your admin username or greeting name. This changes the <b>"Welcome back, {adminName || 'Admin'}"</b> text on the Dashboard, Topbar, and Sidebar.
+          </div>
+          <form onSubmit={handleUpdateName}>
+            <div className="form-group">
+              <label className="form-label required">Display Name / Executive Title</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="form-input"
+                  value={adminName}
+                  onChange={e => setAdminName(e.target.value)}
+                  placeholder="e.g. Super Admin / Tour Guidance BD / S M Shamim"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ whiteSpace: 'nowrap' }}
+                  disabled={savingName}
+                >
+                  {savingName ? 'Saving...' : 'Update Name'}
+                </button>
+              </div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                Current Login Email: <span className="mono" style={{ color: 'var(--gold)' }}>{user?.email || 'supporttgbd@gmail.com'}</span> (Role: <span style={{ color: 'var(--teal)', fontWeight: 600 }}>Super Admin</span>)
+              </div>
+            </div>
+          </form>
+        </div>
+
+        {/* 2. Admin Security — Change Your Password */}
+        <div className="card">
+          <div className="card-title">🔒 Change Your Password</div>
           <form onSubmit={handlePasswordChange}>
             <div className="form-group">
               <label className="form-label required">Current Password</label>
@@ -410,7 +469,7 @@ export default function Settings() {
           </form>
         </div>
 
-        {/* 2. CRM Branding */}
+        {/* 3. CRM Branding */}
         <div className="card">
           <div className="card-title">CRM Branding</div>
           <div className="form-group">
