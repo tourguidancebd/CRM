@@ -6,6 +6,7 @@ import { Modal } from '../../components/common/Modal'
 import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { EmptyState } from '../../components/common/EmptyState'
+import { uid } from '../../utils/idGenerator'
 
 export default function AgentList() {
   const [agents, setAgents] = useState([])
@@ -40,7 +41,7 @@ export default function AgentList() {
         if (error) throw error
         success('Agent updated')
       } else {
-        const { error } = await supabase.from('agents').insert(form)
+        const { error } = await supabase.from('agents').insert({ ...form, id: uid() })
         if (error) throw error
         success('Agent created')
       }

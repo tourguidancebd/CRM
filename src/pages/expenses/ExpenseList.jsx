@@ -7,7 +7,7 @@ import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { EmptyState } from '../../components/common/EmptyState'
 import { useSettings } from '../../contexts/SettingsContext'
-import { generateId } from '../../utils/idGenerator'
+import { generateId, uid } from '../../utils/idGenerator'
 import { money } from '../../utils/money'
 import { formatDate, today } from '../../utils/dateHelpers'
 import { printHtml, downloadHtml, buildLetterheadDoc, escapeHtml } from '../../utils/printService'
@@ -90,7 +90,7 @@ export default function ExpenseList() {
         const seedData = []
         for (const g of DEFAULT_CATEGORY_GROUPS) {
           for (const item of g.items) {
-            seedData.push({ name: item, group_name: g.group })
+            seedData.push({ id: uid(), name: item, group_name: g.group })
           }
         }
         const { data: inserted, error: seedError } = await supabase.from('categories').insert(seedData).select()
@@ -221,6 +221,7 @@ export default function ExpenseList() {
     setSavingCat(true)
     try {
       const { data, error } = await supabase.from('categories').insert({
+        id: uid(),
         name: newCatName.trim(),
         group_name: newCatGroup
       }).select().single()

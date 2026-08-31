@@ -8,6 +8,7 @@ import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { EmptyState } from '../../components/common/EmptyState'
 import { useSettings } from '../../contexts/SettingsContext'
 import { money } from '../../utils/money'
+import { uid } from '../../utils/idGenerator'
 
 export default function ItemList() {
   const [items, setItems] = useState([])
@@ -48,7 +49,8 @@ export default function ItemList() {
         if (error) throw error
         success('Item updated')
       } else {
-        const { error } = await supabase.from('items').insert(payload)
+        const newItemId = uid()
+        const { error } = await supabase.from('items').insert({ ...payload, id: newItemId })
         if (error) throw error
         success('Item added')
       }

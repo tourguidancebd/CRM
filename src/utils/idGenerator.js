@@ -46,6 +46,12 @@ export async function generateId(entityType, tableName, idConfig) {
   }
 }
 
+export function uid() {
+  return (typeof crypto !== 'undefined' && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : (Date.now().toString(36) + Math.random().toString(36).slice(2, 7))
+}
+
 /**
  * Get default ID config for each entity type.
  * These are overridden by settings.data.idSettings in practice.
@@ -62,6 +68,8 @@ export const DEFAULT_ID_CONFIGS = {
  * Preview what an ID will look like given a config
  */
 export function previewId(config) {
-  const { prefix = '', digits = 6, startNumber = 1 } = config
-  return `${prefix}${String(startNumber).padStart(digits, '0')}`
+  const { prefix = '', next = 1, pad = 6, digits = 6, startNumber = 1 } = config || {}
+  const n = next || startNumber || 1
+  const p = pad || digits || 6
+  return `${prefix}${String(n).padStart(p, '0')}`
 }

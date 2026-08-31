@@ -6,6 +6,7 @@ import { Modal } from '../../components/common/Modal'
 import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { EmptyState } from '../../components/common/EmptyState'
+import { uid } from '../../utils/idGenerator'
 
 export default function EmployeeList() {
   const [employees, setEmployees] = useState([])
@@ -39,7 +40,7 @@ export default function EmployeeList() {
         if (error) throw error
         success('Employee updated')
       } else {
-        const { error } = await supabase.from('employees').insert(form)
+        const { error } = await supabase.from('employees').insert({ ...form, id: uid() })
         if (error) throw error
         success('Employee added')
       }

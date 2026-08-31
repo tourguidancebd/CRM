@@ -7,7 +7,7 @@ import { ConfirmDialog } from '../../components/common/ConfirmDialog'
 import { LoadingSpinner } from '../../components/common/LoadingSpinner'
 import { EmptyState } from '../../components/common/EmptyState'
 import { useSettings } from '../../contexts/SettingsContext'
-import { generateId } from '../../utils/idGenerator'
+import { generateId, uid } from '../../utils/idGenerator'
 import { money } from '../../utils/money'
 import { formatDate, today } from '../../utils/dateHelpers'
 import { printHtml, downloadHtml, buildLetterheadDoc, escapeHtml } from '../../utils/printService'
@@ -115,7 +115,7 @@ export default function VendorPayments() {
         if (error) throw error
         success('Vendor payment updated')
       } else {
-        const { error } = await supabase.from('vendor_payments').insert(payload)
+        const { error } = await supabase.from('vendor_payments').insert({ ...payload, id: uid() })
         if (error) throw error
         success('Vendor payment recorded')
       }
