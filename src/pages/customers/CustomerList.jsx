@@ -369,7 +369,7 @@ function CustomerDetail({ customer: c }) {
   const { currencySymbol } = useSettings()
 
   useEffect(() => {
-    supabase.from('invoices').select('*, receipts(amount)').eq('customer_id', c.id).order('invoice_date', { ascending: false }).then(({ data }) => {
+    supabase.from('invoices').select('*, receipts(amount)').eq('customer_id', c.id).order('created_at', { ascending: false }).then(({ data }) => {
       setInvoices(data || [])
       setLoading(false)
     })
@@ -457,7 +457,7 @@ function CustomerDetail({ customer: c }) {
                   return (
                     <tr key={inv.id}>
                       <td className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{inv.id}</td>
-                      <td>{formatDate(inv.invoice_date)}</td>
+                      <td>{formatDate(inv.date || inv.invoice_date)}</td>
                       <td style={{ color: 'var(--teal)' }}>{formatDate(inv.travel_date)}</td>
                       <td className="mono text-right">{money(inv.grand_total, currencySymbol)}</td>
                       <td className="mono text-right" style={{ color: 'var(--teal)' }}>{money(received, currencySymbol)}</td>

@@ -497,12 +497,12 @@ function InvoiceDetail({ inv, invoices, customers, currencySymbol }) {
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 16 }}>
         {[
-          ['Invoice ID', inv.id], ['Invoice Date', formatDate(inv.invoice_date)],
+          ['Invoice ID', inv.id], ['Invoice Date', formatDate(inv.date || inv.invoice_date)],
           ['Travel Date', formatDate(inv.travel_date) + ' ✈'],
           ['Customer', inv.customers?.name || '—'],
           ['Phone', inv.customers?.mobile || '—'],
           ['Sales By', inv.employees?.name || '—'],
-          ['No. of Travelers', inv.num_travelers || 1],
+          ['No. of Travelers', inv.travelers || inv.num_travelers || 1],
         ].map(([label, val]) => (
           <div key={label} style={{ paddingBottom: 8, borderBottom: '1px solid var(--card-border)' }}>
             <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>

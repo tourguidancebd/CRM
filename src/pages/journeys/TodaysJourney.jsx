@@ -281,9 +281,9 @@ export default function TodaysJourney() {
                 ['Customer Mobile', viewInvoice.customers?.mobile || '—'],
                 ['Email', viewInvoice.customers?.email || '—'],
                 ['Address', viewInvoice.customers?.address || '—'],
-                ['Total Travelers', `${viewInvoice.num_travelers || 1} Person(s)`],
+                ['Total Travelers', `${viewInvoice.travelers || viewInvoice.num_travelers || 1} Person(s)`],
                 ['Sales Executive', viewInvoice.employees?.name || '—'],
-                ['Invoice Date', formatDate(viewInvoice.invoice_date)],
+                ['Invoice Date', formatDate(viewInvoice.date || viewInvoice.invoice_date)],
                 ['Payment Status', invoiceReceived(viewInvoice.receipts || []) >= viewInvoice.grand_total ? 'Paid' : 'Due Pending'],
               ].map(([lbl, val]) => (
                 <div key={lbl} style={{ paddingBottom: 8, borderBottom: '1px solid var(--card-border)' }}>

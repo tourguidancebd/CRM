@@ -37,9 +37,9 @@ export default function ReceiptList() {
   const load = useCallback(async () => {
     setLoading(true)
     const [rcptRes, custRes, invRes] = await Promise.all([
-      supabase.from('receipts').select('*, customers(name, mobile), invoices(id, grand_total, invoice_date)').order('created_at', { ascending: false }),
+      supabase.from('receipts').select('*, customers(name, mobile), invoices(id, grand_total, date)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, mobile').order('name'),
-      supabase.from('invoices').select('id, customer_id, grand_total, invoice_date').order('created_at', { ascending: false }),
+      supabase.from('invoices').select('id, customer_id, grand_total, date').order('created_at', { ascending: false }),
     ])
 
     if (rcptRes.error) toastError('Failed to load receipts: ' + rcptRes.error.message)
@@ -308,7 +308,7 @@ export default function ReceiptList() {
                 <option value="">General Payment (Not linked)</option>
                 {customerInvoices.map(inv => (
                   <option key={inv.id} value={inv.id}>
-                    {inv.id} · {formatDate(inv.invoice_date)} · Total: {money(inv.grand_total, currencySymbol)}
+                    {inv.id} · {formatDate(inv.date || inv.invoice_date)} · Total: {money(inv.grand_total, currencySymbol)}
                   </option>
                 ))}
               </select>

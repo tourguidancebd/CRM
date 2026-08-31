@@ -26,7 +26,7 @@ export default function DueInvoices() {
     const { data, error } = await supabase
       .from('invoices')
       .select('*, customers(*), employees(name), receipts(amount)')
-      .order('invoice_date', { ascending: false })
+      .order('created_at', { ascending: false })
 
     if (!error) {
       // Filter client-side to invoices with due > 0
@@ -153,12 +153,12 @@ export default function DueInvoices() {
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 16 }}>
               {[
-                ['Invoice ID', viewInvoice.id], ['Invoice Date', formatDate(viewInvoice.invoice_date)],
+                ['Invoice ID', viewInvoice.id], ['Invoice Date', formatDate(viewInvoice.date || viewInvoice.invoice_date)],
                 ['Travel Date', formatDate(viewInvoice.travel_date) + ' ✈'],
                 ['Customer', viewInvoice.customers?.name || '—'],
                 ['Phone', viewInvoice.customers?.mobile || '—'],
                 ['Sales By', viewInvoice.employees?.name || '—'],
-                ['No. of Travelers', viewInvoice.num_travelers || 1],
+                ['No. of Travelers', viewInvoice.travelers || viewInvoice.num_travelers || 1],
               ].map(([label, val]) => (
                 <div key={label} style={{ paddingBottom: 8, borderBottom: '1px solid var(--card-border)' }}>
                   <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>

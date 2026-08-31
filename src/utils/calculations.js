@@ -100,7 +100,7 @@ export function customerStats(invoices, generalReceipts = []) {
     totalPaid += received
     totalProfit += invoiceNetProfit(inv.items || [], inv.discount)
 
-    const invDate = inv.invoice_date || inv.created_at
+    const invDate = inv.date || inv.invoice_date || inv.created_at
     if (invDate) {
       const d = new Date(invDate)
       if (!lastBookingDate || d > new Date(lastBookingDate)) {
