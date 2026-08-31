@@ -17,14 +17,15 @@ export default function DueInvoices() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [collectTarget, setCollectTarget] = useState(null)
+  const [viewInvoice, setViewInvoice] = useState(null)
   const { toasts, dismiss } = useToast()
-  const { currencySymbol } = useSettings()
+  const { settings, currencySymbol } = useSettings()
 
   const load = useCallback(async () => {
     setLoading(true)
     const { data, error } = await supabase
       .from('invoices')
-      .select('*, customers(name, mobile), employees(name), receipts(amount)')
+      .select('*, customers(*), employees(name), receipts(amount)')
       .order('invoice_date', { ascending: false })
 
     if (!error) {
@@ -59,11 +60,24 @@ export default function DueInvoices() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Due Invoices</h1>
-          <p className="page-subtitle">{invoices.length} invoices with outstanding balance</p>
+          <p className="page-subtitle">Track and collect all outstanding customer balances</p>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Outstanding</div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.3rem', color: 'var(--red)', fontWeight: 600 }}>{money(totalDue, currencySymbol)}</div>
+          <button className="btn btn-secondary btn-sm" onClick={load}>↻ Refresh</button>
+        </div>
+      </div>
+
+      {/* Summary Strip */}
+      <div className="kpi-grid" style={{ marginBottom: 16 }}>
+        <div className="kpi-card orange" style={{ padding: '14px 18px' }}>
+          <div className="kpi-label">Invoices with Due</div>
+          <div className="kpi-value orange" style={{ fontSize: '1.4rem' }}>{filtered.length}</div>
+          <div className="kpi-sub">Pending settlement</div>
+        </div>
+        <div className="kpi-card red" style={{ padding: '14px 18px' }}>
+          <div className="kpi-label">Total Outstanding Due</div>
+          <div className="kpi-value red" style={{ fontSize: '1.4rem' }}>{money(totalDue, currencySymbol)}</div>
+          <div className="kpi-sub">Total uncollected revenue</div>
         </div>
       </div>
 
@@ -73,7 +87,6 @@ export default function DueInvoices() {
             <SearchIcon className="search-icon" />
             <input className="form-input search-input" placeholder="Search by invoice ID, customer..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={load}>↻ Refresh</button>
         </div>
 
         {loading ? <LoadingSpinner /> : filtered.length === 0 ? (
@@ -87,7 +100,7 @@ export default function DueInvoices() {
                   <th>Customer</th><th>Phone</th>
                   <th className="text-right">Total</th><th className="text-right">Paid</th>
                   <th className="text-right">Due</th>
-                  <th>Sales By</th><th>Status</th><th>Action</th>
+                  <th>Sales By</th><th>Status</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -96,7 +109,7 @@ export default function DueInvoices() {
                   const due = (parseFloat(inv.grand_total) || 0) - received
                   return (
                     <tr key={inv.id}>
-                      <td className="mono" style={{ color: 'var(--gold)' }}>{inv.id}</td>
+                      <td className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{inv.id}</td>
                       <td>{formatDate(inv.invoice_date)}</td>
                       <td style={{ color: 'var(--teal)' }}>{formatDate(inv.travel_date)}</td>
                       <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{inv.customers?.name || '—'}</td>
@@ -107,9 +120,14 @@ export default function DueInvoices() {
                       <td style={{ color: 'var(--text-muted)' }}>{inv.employees?.name || '—'}</td>
                       <td><StatusPill grandTotal={inv.grand_total} received={received} /></td>
                       <td>
-                        <button className="btn btn-primary btn-sm" onClick={() => setCollectTarget({ inv, due, received })} id={`collect-${inv.id}`}>
-                          Collect Due
-                        </button>
+                        <div className="actions-col">
+                          <button className="btn btn-ghost btn-sm" onClick={() => setViewInvoice(inv)} title="View Invoice">
+                            View
+                          </button>
+                          <button className="btn btn-primary btn-sm" onClick={() => setCollectTarget({ inv, due, received })} id={`collect-${inv.id}`}>
+                            Collect Due
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -126,9 +144,58 @@ export default function DueInvoices() {
           dueAmount={collectTarget.due}
           onClose={() => { setCollectTarget(null); load() }}
           currencySymbol={currencySymbol}
-          settings={collectTarget}
         />
       )}
+
+      {/* View Invoice Modal */}
+      <Modal isOpen={!!viewInvoice} onClose={() => setViewInvoice(null)} title={`Invoice ${viewInvoice?.id}`} size="lg">
+        {viewInvoice && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', marginBottom: 16 }}>
+              {[
+                ['Invoice ID', viewInvoice.id], ['Invoice Date', formatDate(viewInvoice.invoice_date)],
+                ['Travel Date', formatDate(viewInvoice.travel_date) + ' ✈'],
+                ['Customer', viewInvoice.customers?.name || '—'],
+                ['Phone', viewInvoice.customers?.mobile || '—'],
+                ['Sales By', viewInvoice.employees?.name || '—'],
+                ['No. of Travelers', viewInvoice.num_travelers || 1],
+              ].map(([label, val]) => (
+                <div key={label} style={{ paddingBottom: 8, borderBottom: '1px solid var(--card-border)' }}>
+                  <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>{val}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="table-wrapper" style={{ marginBottom: 14 }}>
+              <table className="data-table">
+                <thead><tr><th>Item</th><th className="text-right">Qty</th><th className="text-right">Price</th><th className="text-right">Subtotal</th></tr></thead>
+                <tbody>
+                  {(viewInvoice.items || []).map((it, idx) => (
+                    <tr key={idx}>
+                      <td>{it.name}</td>
+                      <td className="text-right mono">{it.qty || 1}</td>
+                      <td className="text-right mono">{money(it.price, currencySymbol)}</td>
+                      <td className="text-right mono">{money((it.qty || 1) * (it.price || 0), currencySymbol)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.03)', padding: '12px 16px', borderRadius: 8 }}>
+              <div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total: <b>{money(viewInvoice.grand_total, currencySymbol)}</b></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--teal)', marginLeft: 14 }}>Paid: <b>{money(invoiceReceived(viewInvoice.receipts || []), currencySymbol)}</b></span>
+                <span style={{ fontSize: '0.8rem', color: 'var(--red)', marginLeft: 14 }}>Due: <b>{money((viewInvoice.grand_total || 0) - invoiceReceived(viewInvoice.receipts || []), currencySymbol)}</b></span>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={() => { const inv = viewInvoice; const rec = invoiceReceived(inv.receipts || []); setViewInvoice(null); setCollectTarget({ inv, due: (inv.grand_total || 0) - rec, received: rec }) }}>
+                Collect Due
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </>
