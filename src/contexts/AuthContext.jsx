@@ -3,14 +3,17 @@ import { supabase } from '../supabaseClient'
 
 const AuthContext = createContext(null)
 
+const SUPER_ADMINS = ['supporttgbd@gmail.com', 'admin@tourguidebd.com']
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  const fetchProfile = useCallback(async (userId) => {
+  const fetchProfile = useCallback(async (userId, userEmail) => {
     if (!userId) { setProfile(null); return }
     try {
+      const isSuper = (userEmail && SUPER_ADMINS.includes(userEmail.toLowerCase())) || userId === '56e160e9-f5f3-45cd-9c48-bc0deefb08ae'
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -18,31 +21,42 @@ export function AuthProvider({ children }) {
         .single()
       
       if (!error && data) {
-        setProfile(data)
+        if (isSuper && data.role !== 'Admin') {
+          await supabase.from('profiles').update({ role: 'Admin' }).eq('id', userId)
+          setProfile({ ...data, role: 'Admin' })
+        } else {
+          setProfile(data)
+        }
       } else {
-        // If profile doesn't exist yet, create default Admin profile
-        const newProf = { id: userId, role: 'Admin' }
+        // If profile doesn't exist yet, create default profile
+        const newProf = {
+          id: userId,
+          username: userEmail ? userEmail.split('@')[0] : 'admin',
+          role: 'Admin'
+        }
         await supabase.from('profiles').upsert(newProf)
         setProfile(newProf)
       }
     } catch (e) {
       console.warn('Profile fetch error, defaulting to Admin:', e)
-      setProfile({ id: userId, role: 'Admin' })
+      setProfile({ id: userId, username: userEmail || 'admin', role: 'Admin' })
     }
   }, [])
 
   useEffect(() => {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id).finally(() => setLoading(false))
+      const u = session?.user ?? null
+      setUser(u)
+      if (u) fetchProfile(u.id, u.email).finally(() => setLoading(false))
       else setLoading(false)
     })
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
+      const u = session?.user ?? null
+      setUser(u)
+      if (u) fetchProfile(u.id, u.email)
       else { setProfile(null) }
     })
 

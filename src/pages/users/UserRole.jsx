@@ -89,9 +89,8 @@ export default function UserRole() {
         const { error } = await supabase
           .from('profiles')
           .update({
-            full_name: form.full_name,
             role: form.role,
-            employee_id: form.employee_id || null
+            username: form.email ? form.email.split('@')[0] : (editingProfile.username || 'user')
           })
           .eq('id', editingProfile.id)
 
@@ -117,7 +116,6 @@ export default function UserRole() {
           password: form.password,
           options: {
             data: {
-              full_name: form.full_name,
               role: form.role
             }
           }
@@ -129,10 +127,8 @@ export default function UserRole() {
         if (authData?.user) {
           await supabase.from('profiles').upsert({
             id: authData.user.id,
-            email: form.email.trim(),
-            full_name: form.full_name,
-            role: form.role,
-            employee_id: form.employee_id || null
+            username: form.email.trim().split('@')[0],
+            role: form.role
           })
         }
 
