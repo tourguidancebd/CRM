@@ -4,69 +4,167 @@ import { useToast } from '../../hooks/useToast'
 import { ToastContainer } from '../../components/common/Toast'
 import { useAuth } from '../../contexts/AuthContext'
 import { useSettings } from '../../contexts/SettingsContext'
-import { previewId } from '../../utils/idGenerator'
-import { money } from '../../utils/money'
+import { today } from '../../utils/dateHelpers'
 
 export default function Settings() {
-  const { settings, saveSettings, currencySymbol } = useSettings()
-  const { updatePassword, user } = useAuth()
+  const { settings, saveSettings } = useSettings()
+  const { updatePassword } = useAuth()
   const { toasts, success, error: toastError, dismiss } = useToast()
 
-  const [activeTab, setActiveTab] = useState('company') // 'company' | 'banks' | 'ids' | 'system' | 'profile'
   const [saving, setSaving] = useState(false)
+  const [savingPassword, setSavingPassword] = useState(false)
 
-  // Local copy of form state
-  const [form, setForm] = useState(settings)
+  // Settings form state
+  const [form, setForm] = useState({
+    crmName: 'TGBD CRM',
+    company: {
+      name: 'TGBD Tours',
+      logo: '',
+      address: '',
+      phone: '',
+      email: '',
+      tradeLicense: '',
+      website: '',
+      facebook: '',
+      whatsapp: '',
+      footer: '',
+      authoritySignature: '',
+    },
+    primaryBank: {
+      bankName: '',
+      accountName: '',
+      accountNumber: '',
+      branchName: '',
+      routingNumber: '',
+      otherInfo: '',
+    },
+    secondaryBank: {
+      bankName: '',
+      accountName: '',
+      accountNumber: '',
+      branchName: '',
+      routingNumber: '',
+      otherInfo: '',
+    },
+    idSettings: {
+      invoice: { prefix: 'INV-', next: 1, pad: 6, enabled: true },
+      customer: { prefix: 'CUS-', next: 1, pad: 6, enabled: true },
+      vendor: { prefix: 'VEN-', next: 1, pad: 6, enabled: true },
+      expense: { prefix: 'EXP-', next: 1, pad: 6, enabled: true },
+      receipt: { prefix: 'MR-', next: 1, pad: 6, enabled: true },
+    },
+    system: {
+      currencySymbol: '৳',
+      seasonalTarget: 0,
+      targetStartDate: '',
+      targetEndDate: today(),
+      fixedBudget: 0,
+      birthdayWishEnabled: true,
+    },
+  })
 
-  // Profile password state
+  // Password change state
   const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   })
-  const [savingPassword, setSavingPassword] = useState(false)
 
   useEffect(() => {
-    setForm(settings)
+    if (settings) {
+      setForm({
+        crmName: settings.crmName || 'TGBD CRM',
+        company: {
+          name: settings.company?.name || 'TGBD Tours',
+          logo: settings.company?.logo || '',
+          address: settings.company?.address || '',
+          phone: settings.company?.phone || '',
+          email: settings.company?.email || '',
+          tradeLicense: settings.company?.tradeLicense || '',
+          website: settings.company?.website || '',
+          facebook: settings.company?.facebook || '',
+          whatsapp: settings.company?.whatsapp || '',
+          footer: settings.company?.footer || '',
+          authoritySignature: settings.company?.authoritySignature || '',
+        },
+        primaryBank: {
+          bankName: settings.primaryBank?.bankName || '',
+          accountName: settings.primaryBank?.accountName || '',
+          accountNumber: settings.primaryBank?.accountNumber || '',
+          branchName: settings.primaryBank?.branchName || '',
+          routingNumber: settings.primaryBank?.routingNumber || '',
+          otherInfo: settings.primaryBank?.otherInfo || '',
+        },
+        secondaryBank: {
+          bankName: settings.secondaryBank?.bankName || '',
+          accountName: settings.secondaryBank?.accountName || '',
+          accountNumber: settings.secondaryBank?.accountNumber || '',
+          branchName: settings.secondaryBank?.branchName || '',
+          routingNumber: settings.secondaryBank?.routingNumber || '',
+          otherInfo: settings.secondaryBank?.otherInfo || '',
+        },
+        idSettings: {
+          invoice: { prefix: 'INV-', next: 1, pad: 6, enabled: true, ...settings.idSettings?.invoice },
+          customer: { prefix: 'CUS-', next: 1, pad: 6, enabled: true, ...settings.idSettings?.customer },
+          vendor: { prefix: 'VEN-', next: 1, pad: 6, enabled: true, ...settings.idSettings?.vendor },
+          expense: { prefix: 'EXP-', next: 1, pad: 6, enabled: true, ...settings.idSettings?.expense },
+          receipt: { prefix: 'MR-', next: 1, pad: 6, enabled: true, ...settings.idSettings?.receipt },
+        },
+        system: {
+          currencySymbol: settings.system?.currencySymbol || '৳',
+          seasonalTarget: settings.system?.seasonalTarget || 0,
+          targetStartDate: settings.system?.targetStartDate || '',
+          targetEndDate: settings.system?.targetEndDate || today(),
+          fixedBudget: settings.system?.fixedBudget || 0,
+          birthdayWishEnabled: settings.system?.birthdayWishEnabled !== false,
+        },
+      })
+    }
   }, [settings])
 
-  const handleFieldChange = (section, key, value) => {
+  const setCompanyField = (key, value) => {
     setForm(prev => ({
       ...prev,
-      [section]: {
-        ...prev[section],
-        [key]: value
-      }
+      company: { ...prev.company, [key]: value }
     }))
   }
 
-  const handleIdConfigChange = (entity, key, value) => {
+  const setPrimaryBankField = (key, value) => {
+    setForm(prev => ({
+      ...prev,
+      primaryBank: { ...prev.primaryBank, [key]: value }
+    }))
+  }
+
+  const setSecondaryBankField = (key, value) => {
+    setForm(prev => ({
+      ...prev,
+      secondaryBank: { ...prev.secondaryBank, [key]: value }
+    }))
+  }
+
+  const setIdField = (entity, field, value) => {
     setForm(prev => ({
       ...prev,
       idSettings: {
         ...prev.idSettings,
         [entity]: {
-          ...prev.idSettings?.[entity],
-          [key]: value
+          ...prev.idSettings[entity],
+          [field]: value
         }
       }
     }))
   }
 
-  const handleSaveAll = async (e) => {
-    if (e) e.preventDefault()
-    setSaving(true)
-    try {
-      await saveSettings(form)
-      success('System settings saved successfully')
-    } catch (err) {
-      toastError('Failed to save settings: ' + err.message)
-    } finally {
-      setSaving(false)
-    }
+  const setSystemField = (key, value) => {
+    setForm(prev => ({
+      ...prev,
+      system: { ...prev.system, [key]: value }
+    }))
   }
 
-  // Handle image conversion to Base64 data URL for logo/signature
-  const handleImageUpload = (e, targetField) => {
+  // Handle file uploads (logo / signature)
+  const handleFileUpload = (e, field) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -77,506 +175,559 @@ export default function Settings() {
 
     const reader = new FileReader()
     reader.onload = () => {
-      handleFieldChange('company', targetField, reader.result)
-      success(`Image loaded. Click 'Save Changes' below to persist.`)
+      setCompanyField(field, reader.result)
+      success(`Image loaded! Click "Save Settings" below to keep changes.`)
     }
     reader.readAsDataURL(file)
+  }
+
+  const handleSaveSettings = async (e) => {
+    if (e) e.preventDefault()
+    setSaving(true)
+    try {
+      await saveSettings(form)
+      success('Settings saved successfully!')
+    } catch (err) {
+      toastError('Failed to save settings: ' + err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handlePasswordChange = async (e) => {
     e.preventDefault()
     if (!passwordForm.newPassword || passwordForm.newPassword.length < 8) {
-      toastError('New password must be at least 8 characters long')
+      toastError('New password must be at least 8 characters long.')
       return
     }
 
     const hasLetter = /[a-zA-Z]/.test(passwordForm.newPassword)
     const hasNumber = /[0-9]/.test(passwordForm.newPassword)
     if (!hasLetter || !hasNumber) {
-      toastError('Password must contain both letters and numbers')
+      toastError('Password must contain both letters and numbers.')
       return
     }
 
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toastError('Passwords do not match')
+      toastError('New password and confirmation do not match.')
       return
     }
 
     setSavingPassword(true)
     try {
       await updatePassword(passwordForm.newPassword)
-      success('Admin password successfully updated!')
-      setPasswordForm({ newPassword: '', confirmPassword: '' })
+      success('Password updated successfully!')
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
     } catch (err) {
-      toastError('Failed to update password: ' + err.message)
+      toastError('Password update failed: ' + err.message)
     } finally {
       setSavingPassword(false)
     }
   }
 
+  const renderIdRow = (key, label) => {
+    const cfg = form.idSettings[key] || { prefix: '', next: 1, pad: 6, enabled: true }
+    const preview = `${cfg.prefix || ''}${String(cfg.next || 1).padStart(cfg.pad || 6, '0')}`
+
+    return (
+      <div key={key} style={{ marginBottom: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr', gap: 10, alignItems: 'flex-end' }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">{label} Prefix</label>
+            <input
+              className="form-input"
+              value={cfg.prefix}
+              onChange={e => setIdField(key, 'prefix', e.target.value)}
+            />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Start #</label>
+            <input
+              type="number"
+              className="form-input"
+              value={cfg.next}
+              onChange={e => setIdField(key, 'next', parseInt(e.target.value) || 1)}
+            />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Digits</label>
+            <input
+              type="number"
+              className="form-input"
+              value={cfg.pad}
+              onChange={e => setIdField(key, 'pad', parseInt(e.target.value) || 6)}
+            />
+          </div>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Enabled</label>
+            <select
+              className="form-select"
+              value={cfg.enabled ? 'true' : 'false'}
+              onChange={e => setIdField(key, 'enabled', e.target.value === 'true')}
+            >
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
+          Preview: <span className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{preview}</span>
+        </div>
+      </div>
+    )
+  }
+
+  const renderBankFields = (bank, setBankField) => (
+    <>
+      <div className="form-grid form-grid-2">
+        <div className="form-group">
+          <label className="form-label">Bank Name</label>
+          <input
+            className="form-input"
+            value={bank.bankName}
+            onChange={e => setBankField('bankName', e.target.value)}
+            placeholder="e.g. Dutch-Bangla Bank"
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Account Name</label>
+          <input
+            className="form-input"
+            value={bank.accountName}
+            onChange={e => setBankField('accountName', e.target.value)}
+            placeholder="e.g. Tour Guidance BD"
+          />
+        </div>
+      </div>
+
+      <div className="form-grid form-grid-2">
+        <div className="form-group">
+          <label className="form-label">Account Number</label>
+          <input
+            className="form-input mono"
+            value={bank.accountNumber}
+            onChange={e => setBankField('accountNumber', e.target.value)}
+            placeholder="1234567890123"
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Branch Name</label>
+          <input
+            className="form-input"
+            value={bank.branchName}
+            onChange={e => setBankField('branchName', e.target.value)}
+            placeholder="e.g. Banani Branch"
+          />
+        </div>
+      </div>
+
+      <div className="form-grid form-grid-2">
+        <div className="form-group">
+          <label className="form-label">Routing Number</label>
+          <input
+            className="form-input mono"
+            value={bank.routingNumber}
+            onChange={e => setBankField('routingNumber', e.target.value)}
+            placeholder="090270000"
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Other Payment Info</label>
+          <input
+            className="form-input"
+            value={bank.otherInfo}
+            onChange={e => setBankField('otherInfo', e.target.value)}
+            placeholder="e.g. bKash / Nagad Merchant: 017xxxxxxxx"
+          />
+        </div>
+      </div>
+    </>
+  )
+
   return (
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Settings & Configuration</h1>
-          <p className="page-subtitle">Configure company details, bank payment profiles, sequential numbering, and targets</p>
+          <h1 className="page-title">Settings</h1>
+          <p className="page-subtitle">Configure company branding, bank accounts, ID sequences, and system defaults</p>
         </div>
-        {activeTab !== 'profile' && (
-          <button className="btn btn-primary" onClick={handleSaveAll} disabled={saving} id="save-settings-top-btn">
-            {saving ? 'Saving...' : 'Save All Settings'}
-          </button>
-        )}
+        <button
+          className="btn btn-primary"
+          onClick={handleSaveSettings}
+          disabled={saving}
+          id="top-save-settings-btn"
+        >
+          {saving ? 'Saving...' : '💾 Save Settings'}
+        </button>
       </div>
 
-      <div className="card">
-        {/* Navigation Tabs */}
-        <div className="tabs">
-          <button className={`tab ${activeTab === 'company' ? 'active' : ''}`} onClick={() => setActiveTab('company')}>
-            🏢 Company & Branding
-          </button>
-          <button className={`tab ${activeTab === 'banks' ? 'active' : ''}`} onClick={() => setActiveTab('banks')}>
-            💳 Bank Accounts
-          </button>
-          <button className={`tab ${activeTab === 'ids' ? 'active' : ''}`} onClick={() => setActiveTab('ids')}>
-            🔢 ID Prefix & Numbering
-          </button>
-          <button className={`tab ${activeTab === 'system' ? 'active' : ''}`} onClick={() => setActiveTab('system')}>
-            ⚙ System & Seasonal Targets
-          </button>
-          <button className={`tab ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>
-            🔒 Admin Security
-          </button>
-        </div>
-
-        {/* Tab 1: Company Info */}
-        {activeTab === 'company' && (
-          <form onSubmit={handleSaveAll}>
-            <div className="form-grid form-grid-2">
-              <div className="form-group">
-                <label className="form-label required">CRM Application Name</label>
-                <input
-                  className="form-input"
-                  value={form.crmName || 'TGBD CRM'}
-                  onChange={e => setForm(f => ({ ...f, crmName: e.target.value }))}
-                  placeholder="e.g. TGBD CRM"
-                  required
-                />
-                <div className="form-hint">Displayed in login, navigation header, and browser tab.</div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label required">Official Company Name</label>
-                <input
-                  className="form-input"
-                  value={form.company?.name || ''}
-                  onChange={e => handleFieldChange('company', 'name', e.target.value)}
-                  placeholder="e.g. Tour Guidance BD"
-                  required
-                />
-                <div className="form-hint">Appears on letterhead invoice and receipt headers.</div>
-              </div>
-            </div>
-
-            <div className="form-grid form-grid-2">
-              <div className="form-group">
-                <label className="form-label">Company Logo (For Invoices & Vouchers)</label>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  {form.company?.logo ? (
-                    <img src={form.company.logo} alt="Logo Preview" style={{ width: 64, height: 64, objectFit: 'contain', background: '#fff', padding: 4, borderRadius: 6, border: '1px solid var(--card-border)' }} />
-                  ) : (
-                    <div style={{ width: 64, height: 64, background: 'rgba(255,255,255,0.05)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.7rem' }}>No Logo</div>
-                  )}
-                  <div style={{ flex: 1 }}>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="form-input"
-                      style={{ fontSize: '0.78rem' }}
-                      onChange={e => handleImageUpload(e, 'logo')}
-                    />
-                    {form.company?.logo && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        style={{ color: 'var(--red)', marginTop: 4, fontSize: '0.72rem', padding: '2px 0' }}
-                        onClick={() => handleFieldChange('company', 'logo', '')}
-                      >
-                        Remove Logo
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Authority Signature Image (For Invoices)</label>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  {form.company?.authoritySignature ? (
-                    <img src={form.company.authoritySignature} alt="Signature Preview" style={{ width: 100, height: 50, objectFit: 'contain', background: '#fff', padding: 4, borderRadius: 6, border: '1px solid var(--card-border)' }} />
-                  ) : (
-                    <div style={{ width: 100, height: 50, background: 'rgba(255,255,255,0.05)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.7rem' }}>No Signature</div>
-                  )}
-                  <div style={{ flex: 1 }}>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="form-input"
-                      style={{ fontSize: '0.78rem' }}
-                      onChange={e => handleImageUpload(e, 'authoritySignature')}
-                    />
-                    {form.company?.authoritySignature && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        style={{ color: 'var(--red)', marginTop: 4, fontSize: '0.72rem', padding: '2px 0' }}
-                        onClick={() => handleFieldChange('company', 'authoritySignature', '')}
-                      >
-                        Remove Signature
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="form-grid form-grid-3">
-              <div className="form-group">
-                <label className="form-label">Official Phone</label>
-                <input className="form-input" value={form.company?.phone || ''} onChange={e => handleFieldChange('company', 'phone', e.target.value)} placeholder="+880 1..." />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Official Email</label>
-                <input className="form-input" value={form.company?.email || ''} onChange={e => handleFieldChange('company', 'email', e.target.value)} placeholder="info@tourguidebd.com" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">WhatsApp Number</label>
-                <input className="form-input" value={form.company?.whatsapp || ''} onChange={e => handleFieldChange('company', 'whatsapp', e.target.value)} placeholder="+880 1..." />
-              </div>
-            </div>
-
-            <div className="form-grid form-grid-3">
-              <div className="form-group">
-                <label className="form-label">Website URL</label>
-                <input className="form-input" value={form.company?.website || ''} onChange={e => handleFieldChange('company', 'website', e.target.value)} placeholder="https://tourguidebd.com" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Facebook Page</label>
-                <input className="form-input" value={form.company?.facebook || ''} onChange={e => handleFieldChange('company', 'facebook', e.target.value)} placeholder="fb.com/tourguidancebd" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Trade License No</label>
-                <input className="form-input" value={form.company?.tradeLicense || ''} onChange={e => handleFieldChange('company', 'tradeLicense', e.target.value)} placeholder="TRAD/DNCC/..." />
-              </div>
-            </div>
-
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900 }}>
+        {/* 1. Admin Profile — Change Your Password */}
+        <div className="card">
+          <div className="card-title">Admin Profile — Change Your Password</div>
+          <form onSubmit={handlePasswordChange}>
             <div className="form-group">
-              <label className="form-label">Office Address</label>
-              <input className="form-input" value={form.company?.address || ''} onChange={e => handleFieldChange('company', 'address', e.target.value)} placeholder="Suite 402, House 12, Road 5, Dhanmondi, Dhaka-1205" />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Print Footer Notes & Disclaimer</label>
-              <textarea
-                className="form-textarea"
-                rows={2}
-                value={form.company?.footer || ''}
-                onChange={e => handleFieldChange('company', 'footer', e.target.value)}
-                placeholder="Thank you for choosing Tour Guidance BD. Please keep this invoice for all journey confirmations."
+              <label className="form-label required">Current Password</label>
+              <input
+                type="password"
+                className="form-input"
+                value={passwordForm.currentPassword}
+                onChange={e => setPasswordForm(p => ({ ...p, currentPassword: e.target.value }))}
+                placeholder="Enter current password"
               />
             </div>
-
-            <div style={{ marginTop: 20 }}>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving...' : 'Save Company Details'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Tab 2: Bank Accounts */}
-        {activeTab === 'banks' && (
-          <form onSubmit={handleSaveAll}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-              {/* Primary Bank */}
-              <div style={{ background: 'rgba(255,255,255,0.02)', padding: 18, borderRadius: 8, border: '1px solid var(--card-border)' }}>
-                <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', color: 'var(--gold)', marginBottom: 14, fontWeight: 700 }}>
-                  🏦 Primary Bank Account
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Bank Name</label>
-                  <input className="form-input" placeholder="e.g. Dutch-Bangla Bank PLC" value={form.primaryBank?.bankName || ''} onChange={e => handleFieldChange('primaryBank', 'bankName', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Account Name</label>
-                  <input className="form-input" placeholder="e.g. Tour Guidance BD" value={form.primaryBank?.accountName || ''} onChange={e => handleFieldChange('primaryBank', 'accountName', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Account Number</label>
-                  <input className="form-input mono" placeholder="e.g. 1151200000000" value={form.primaryBank?.accountNumber || ''} onChange={e => handleFieldChange('primaryBank', 'accountNumber', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Branch Name</label>
-                  <input className="form-input" placeholder="e.g. Dhanmondi Branch" value={form.primaryBank?.branchName || ''} onChange={e => handleFieldChange('primaryBank', 'branchName', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Routing Number</label>
-                  <input className="form-input mono" placeholder="e.g. 090260000" value={form.primaryBank?.routingNumber || ''} onChange={e => handleFieldChange('primaryBank', 'routingNumber', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Other Payment / MFS Info</label>
-                  <input className="form-input" placeholder="e.g. bKash Merchant: 01700000000" value={form.primaryBank?.otherInfo || ''} onChange={e => handleFieldChange('primaryBank', 'otherInfo', e.target.value)} />
-                </div>
-              </div>
-
-              {/* Secondary Bank */}
-              <div style={{ background: 'rgba(255,255,255,0.02)', padding: 18, borderRadius: 8, border: '1px solid var(--card-border)' }}>
-                <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', color: 'var(--teal)', marginBottom: 14, fontWeight: 700 }}>
-                  🏦 Secondary Bank Account
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Bank Name</label>
-                  <input className="form-input" placeholder="e.g. BRAC Bank PLC" value={form.secondaryBank?.bankName || ''} onChange={e => handleFieldChange('secondaryBank', 'bankName', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Account Name</label>
-                  <input className="form-input" placeholder="e.g. Tour Guidance BD" value={form.secondaryBank?.accountName || ''} onChange={e => handleFieldChange('secondaryBank', 'accountName', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Account Number</label>
-                  <input className="form-input mono" placeholder="e.g. 1501200000000" value={form.secondaryBank?.accountNumber || ''} onChange={e => handleFieldChange('secondaryBank', 'accountNumber', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Branch Name</label>
-                  <input className="form-input" placeholder="e.g. Gulshan Branch" value={form.secondaryBank?.branchName || ''} onChange={e => handleFieldChange('secondaryBank', 'branchName', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Routing Number</label>
-                  <input className="form-input mono" placeholder="e.g. 060260000" value={form.secondaryBank?.routingNumber || ''} onChange={e => handleFieldChange('secondaryBank', 'routingNumber', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Other Payment / MFS Info</label>
-                  <input className="form-input" placeholder="e.g. Nagad Merchant: 01800000000" value={form.secondaryBank?.otherInfo || ''} onChange={e => handleFieldChange('secondaryBank', 'otherInfo', e.target.value)} />
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 20 }}>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving...' : 'Save Bank Accounts'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Tab 3: ID Settings */}
-        {activeTab === 'ids' && (
-          <form onSubmit={handleSaveAll}>
-            <div style={{ padding: '8px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 16 }}>
-              💡 <b>Note:</b> ID changes only apply to newly generated records. Existing records preserve their established historical IDs.
-            </div>
-
-            <div className="table-wrapper">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Entity Type</th>
-                    <th>Prefix</th>
-                    <th>Start Number</th>
-                    <th>Digit Padding</th>
-                    <th>Live ID Preview</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    { key: 'invoice', label: 'Invoices' },
-                    { key: 'customer', label: 'Customers' },
-                    { key: 'vendor', label: 'Vendors' },
-                    { key: 'expense', label: 'Expenses' },
-                    { key: 'receipt', label: 'Money Receipts' },
-                  ].map(entity => {
-                    const cfg = form.idSettings?.[entity.key] || { prefix: '', digits: 6, startNumber: 1 }
-                    return (
-                      <tr key={entity.key}>
-                        <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{entity.label}</td>
-                        <td>
-                          <input
-                            className="form-input mono"
-                            style={{ width: 120, padding: '4px 8px' }}
-                            value={cfg.prefix || ''}
-                            onChange={e => handleIdConfigChange(entity.key, 'prefix', e.target.value)}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            min="1"
-                            className="form-input mono"
-                            style={{ width: 90, padding: '4px 8px' }}
-                            value={cfg.startNumber || 1}
-                            onChange={e => handleIdConfigChange(entity.key, 'startNumber', parseInt(e.target.value) || 1)}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            min="1"
-                            max="10"
-                            className="form-input mono"
-                            style={{ width: 70, padding: '4px 8px' }}
-                            value={cfg.digits || 6}
-                            onChange={e => handleIdConfigChange(entity.key, 'digits', parseInt(e.target.value) || 6)}
-                          />
-                        </td>
-                        <td>
-                          <span className="mono" style={{ color: 'var(--gold)', fontWeight: 700, fontSize: '0.9rem' }}>
-                            {previewId(cfg)}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ marginTop: 20 }}>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving...' : 'Save ID Configurations'}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Tab 4: System & Seasonal Targets */}
-        {activeTab === 'system' && (
-          <form onSubmit={handleSaveAll}>
-            <div className="form-grid form-grid-2">
-              <div className="form-group">
-                <label className="form-label required">Currency Symbol</label>
-                <input
-                  className="form-input mono"
-                  style={{ width: 120, fontSize: '1.2rem' }}
-                  value={form.system?.currencySymbol || '৳'}
-                  onChange={e => handleFieldChange('system', 'currencySymbol', e.target.value)}
-                  placeholder="৳"
-                  required
-                />
-                <div className="form-hint">Default is ৳ (Bangladeshi Taka).</div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Seasonal Sales Target Amount ({currencySymbol})</label>
-                <input
-                  type="number"
-                  step="1000"
-                  min="0"
-                  className="form-input mono"
-                  style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--gold)' }}
-                  value={form.system?.seasonalTarget || 0}
-                  onChange={e => handleFieldChange('system', 'seasonalTarget', parseFloat(e.target.value) || 0)}
-                  placeholder="0"
-                />
-                <div className="form-hint">Drives the Dashboard progress gauge.</div>
-              </div>
-            </div>
-
-            <div className="form-grid form-grid-2">
-              <div className="form-group">
-                <label className="form-label">Seasonal Target Start Date</label>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={form.system?.targetStartDate || ''}
-                  onChange={e => handleFieldChange('system', 'targetStartDate', e.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Seasonal Target End Date</label>
-                <input
-                  type="date"
-                  className="form-input"
-                  value={form.system?.targetEndDate || ''}
-                  onChange={e => handleFieldChange('system', 'targetEndDate', e.target.value)}
-                />
-              </div>
-            </div>
-
             <div className="form-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginTop: 10 }}>
-                <input
-                  type="checkbox"
-                  style={{ width: 18, height: 18, accentColor: 'var(--gold)' }}
-                  checked={form.system?.birthdayWishEnabled !== false}
-                  onChange={e => handleFieldChange('system', 'birthdayWishEnabled', e.target.checked)}
-                />
-                <div>
-                  <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                    Enable "Today's Birthdays" Notification Panel on Dashboard
-                  </div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                    Surfaces customers whose birthday matches today, with a 1-click branded greeting email composer.
-                  </div>
-                </div>
-              </label>
+              <label className="form-label required">New Password</label>
+              <input
+                type="password"
+                className="form-input"
+                value={passwordForm.newPassword}
+                onChange={e => setPasswordForm(p => ({ ...p, newPassword: e.target.value }))}
+                placeholder="Enter new password"
+              />
             </div>
-
-            <div style={{ marginTop: 20 }}>
-              <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Saving...' : 'Save System Settings'}
-              </button>
+            <div className="form-group">
+              <label className="form-label required">Confirm New Password</label>
+              <input
+                type="password"
+                className="form-input"
+                value={passwordForm.confirmPassword}
+                onChange={e => setPasswordForm(p => ({ ...p, confirmPassword: e.target.value }))}
+                placeholder="Re-enter new password"
+              />
             </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+              At least 8 characters, with both letters and numbers.
+            </div>
+            <button
+              type="submit"
+              className="btn btn-secondary btn-block"
+              disabled={savingPassword}
+              id="change-password-btn"
+            >
+              {savingPassword ? 'Updating...' : 'Update Password'}
+            </button>
           </form>
-        )}
+        </div>
 
-        {/* Tab 5: Admin Security */}
-        {activeTab === 'profile' && (
-          <div style={{ maxWidth: 440 }}>
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-                Change Account Password
-              </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                Updating your password modifies your credentials across all active devices.
-              </div>
-            </div>
-
-            <form onSubmit={handlePasswordChange}>
-              <div className="form-group">
-                <label className="form-label required">New Password</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  placeholder="Min 8 chars with letters and numbers"
-                  value={passwordForm.newPassword}
-                  onChange={e => setPasswordForm(p => ({ ...p, newPassword: e.target.value }))}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label required">Confirm New Password</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  placeholder="Repeat new password"
-                  value={passwordForm.confirmPassword}
-                  onChange={e => setPasswordForm(p => ({ ...p, confirmPassword: e.target.value }))}
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="btn btn-primary"
-                style={{ marginTop: 8 }}
-                disabled={savingPassword || !passwordForm.newPassword}
-              >
-                {savingPassword ? 'Updating Password...' : 'Update Password'}
-              </button>
-            </form>
+        {/* 2. CRM Branding */}
+        <div className="card">
+          <div className="card-title">CRM Branding</div>
+          <div className="form-group">
+            <label className="form-label">
+              CRM Name <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(shown on login, sidebar &amp; page title)</span>
+            </label>
+            <input
+              className="form-input"
+              value={form.crmName}
+              onChange={e => setForm(f => ({ ...f, crmName: e.target.value }))}
+              placeholder="TGBD CRM"
+              id="s-crmname"
+            />
           </div>
-        )}
+        </div>
+
+        {/* 3. Company Information */}
+        <div className="card">
+          <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Company Information</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Shown on printed invoices, vouchers &amp; reports</span>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Company Name</label>
+            <input
+              className="form-input"
+              value={form.company.name}
+              onChange={e => setCompanyField('name', e.target.value)}
+              placeholder="Tour Guidance BD"
+              id="s-name"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Logo</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 8,
+                  background: '#0C1220',
+                  border: '1px solid var(--card-border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  flexShrink: 0
+                }}
+              >
+                {form.company.logo ? (
+                  <img src={form.company.logo} alt="Logo Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                ) : (
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>No logo</span>
+                )}
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="form-input"
+                style={{ flex: 1 }}
+                onChange={e => handleFileUpload(e, 'logo')}
+                id="s-logo"
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Address</label>
+            <textarea
+              className="form-input"
+              rows={2}
+              value={form.company.address}
+              onChange={e => setCompanyField('address', e.target.value)}
+              placeholder="House 00, Road 00, Block A, Banani, Dhaka-1213"
+              id="s-address"
+            />
+          </div>
+
+          <div className="form-grid form-grid-2">
+            <div className="form-group">
+              <label className="form-label">Phone</label>
+              <input
+                className="form-input"
+                value={form.company.phone}
+                onChange={e => setCompanyField('phone', e.target.value)}
+                placeholder="+880 1700-000000"
+                id="s-phone"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Email</label>
+              <input
+                type="email"
+                className="form-input"
+                value={form.company.email}
+                onChange={e => setCompanyField('email', e.target.value)}
+                placeholder="info@tourguidancebd.com"
+                id="s-email"
+              />
+            </div>
+          </div>
+
+          <div className="form-grid form-grid-2">
+            <div className="form-group">
+              <label className="form-label">Trade License No</label>
+              <input
+                className="form-input"
+                value={form.company.tradeLicense}
+                onChange={e => setCompanyField('tradeLicense', e.target.value)}
+                placeholder="TRAD/DNCC/123456/2026"
+                id="s-license"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Website</label>
+              <input
+                className="form-input"
+                value={form.company.website}
+                onChange={e => setCompanyField('website', e.target.value)}
+                placeholder="https://tourguidancebd.com"
+                id="s-website"
+              />
+            </div>
+          </div>
+
+          <div className="form-grid form-grid-2">
+            <div className="form-group">
+              <label className="form-label">Facebook Page</label>
+              <input
+                className="form-input"
+                value={form.company.facebook}
+                onChange={e => setCompanyField('facebook', e.target.value)}
+                placeholder="facebook.com/tourguidancebd"
+                id="s-facebook"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">WhatsApp Number</label>
+              <input
+                className="form-input"
+                value={form.company.whatsapp}
+                onChange={e => setCompanyField('whatsapp', e.target.value)}
+                placeholder="+8801700000000"
+                id="s-whatsapp"
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Footer Information</label>
+            <textarea
+              className="form-input"
+              rows={2}
+              value={form.company.footer}
+              onChange={e => setCompanyField('footer', e.target.value)}
+              placeholder="Thank you for traveling with Tour Guidance BD! Terms & conditions apply."
+              id="s-footer"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Authority Signature</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 8,
+                  background: '#0C1220',
+                  border: '1px solid var(--card-border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  flexShrink: 0
+                }}
+              >
+                {form.company.authoritySignature ? (
+                  <img src={form.company.authoritySignature} alt="Signature Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                ) : (
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>None</span>
+                )}
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="form-input"
+                style={{ flex: 1 }}
+                onChange={e => handleFileUpload(e, 'authoritySignature')}
+                id="s-signature"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 4. Primary Bank Account */}
+        <div className="card">
+          <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Primary Bank Account</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Shown on invoices</span>
+          </div>
+          {renderBankFields(form.primaryBank, setPrimaryBankField)}
+        </div>
+
+        {/* 5. Second Bank Account */}
+        <div className="card">
+          <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Second Bank Account</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Optional — choose per invoice which one to show</span>
+          </div>
+          {renderBankFields(form.secondaryBank, setSecondaryBankField)}
+        </div>
+
+        {/* 6. ID Settings */}
+        <div className="card">
+          <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>ID Settings</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Applies to newly created records only</span>
+          </div>
+          {renderIdRow('invoice', 'Invoice')}
+          {renderIdRow('customer', 'Customer')}
+          {renderIdRow('vendor', 'Vendor')}
+          {renderIdRow('expense', 'Expense')}
+          {renderIdRow('receipt', 'Money Receipt')}
+        </div>
+
+        {/* 7. System Settings */}
+        <div className="card">
+          <div className="card-title">System Settings</div>
+          <div className="form-group">
+            <label className="form-label">Currency Symbol</label>
+            <input
+              className="form-input"
+              value={form.system.currencySymbol}
+              onChange={e => setSystemField('currencySymbol', e.target.value)}
+              placeholder="৳"
+              id="s-currency"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Seasonal Target</label>
+            <input
+              type="number"
+              className="form-input"
+              value={form.system.seasonalTarget}
+              onChange={e => setSystemField('seasonalTarget', parseFloat(e.target.value) || 0)}
+              placeholder="0"
+              id="s-target"
+            />
+          </div>
+
+          <div className="form-grid form-grid-2">
+            <div className="form-group">
+              <label className="form-label">Start Date</label>
+              <input
+                type="date"
+                className="form-input"
+                value={form.system.targetStartDate}
+                onChange={e => setSystemField('targetStartDate', e.target.value)}
+                id="s-start"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">End Date</label>
+              <input
+                type="date"
+                className="form-input"
+                value={form.system.targetEndDate}
+                onChange={e => setSystemField('targetEndDate', e.target.value)}
+                id="s-end"
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Fixed Budget</label>
+            <input
+              type="number"
+              className="form-input"
+              value={form.system.fixedBudget}
+              onChange={e => setSystemField('fixedBudget', parseFloat(e.target.value) || 0)}
+              placeholder="0"
+              id="s-budget"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Birthday Wishes</label>
+            <select
+              className="form-select"
+              value={form.system.birthdayWishEnabled ? 'true' : 'false'}
+              onChange={e => setSystemField('birthdayWishEnabled', e.target.value === 'true')}
+              id="s-birthday"
+            >
+              <option value="true">Enabled — show Today's Birthdays panel</option>
+              <option value="false">Disabled</option>
+            </select>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
+              Sending still requires a staff member to click "Send Wish" — a browser can't send email unattended. True automatic sending needs the backend/email service step.
+            </div>
+          </div>
+        </div>
+
+        {/* 8. Big Gold Save Button at the Bottom */}
+        <button
+          type="button"
+          className="btn btn-primary btn-block"
+          style={{ padding: '14px', fontSize: '1rem', fontWeight: 700 }}
+          onClick={handleSaveSettings}
+          disabled={saving}
+          id="save-settings-btn"
+        >
+          {saving ? 'Saving Settings...' : 'Save Settings'}
+        </button>
       </div>
 
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
