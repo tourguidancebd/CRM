@@ -43,7 +43,7 @@ export default function InvoiceList() {
   const load = useCallback(async () => {
     setLoading(true)
     const [invRes, custRes, empRes, itemRes] = await Promise.all([
-      supabase.from('invoices').select('*, customers(name, mobile), employees(name), receipts(amount)').order('created_at', { ascending: false }),
+      supabase.from('invoices').select('*, customers(name, mobile), receipts(amount)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, mobile').order('name'),
       supabase.from('employees').select('id, name').order('name'),
       supabase.from('items').select('*').order('name'),
@@ -68,13 +68,13 @@ export default function InvoiceList() {
     const { data: invData } = await supabase.from('invoices').select('*').eq('id', inv.id).single()
     setForm({
       customer_id: invData.customer_id || '',
-      sales_by: invData.sales_by || '',
-      invoice_date: invData.invoice_date || today(),
+      sales_by: invData.sales_by_id || invData.sales_by || '',
+      invoice_date: invData.date || invData.invoice_date || today(),
       travel_date: invData.travel_date || '',
-      num_travelers: invData.num_travelers || 1,
+      num_travelers: invData.travelers || invData.num_travelers || 1,
       discount: invData.discount || 0,
       paid_now: 0, // Don't re-apply past payment
-      bank_account: invData.bank_account || 'none',
+      bank_account: invData.bank_choice || invData.bank_account || 'primary',
       items: (invData.items && invData.items.length > 0) ? invData.items : [EMPTY_LINE()],
     })
     setEditingId(inv.id)
@@ -118,13 +118,13 @@ export default function InvoiceList() {
     try {
       const payload = {
         customer_id: form.customer_id,
-        sales_by: form.sales_by || null,
-        invoice_date: form.invoice_date,
+        sales_by_id: form.sales_by || null,
+        date: form.invoice_date || today(),
         travel_date: form.travel_date,
-        num_travelers: parseInt(form.num_travelers) || 1,
+        travelers: parseInt(form.num_travelers) || 1,
         discount: parseFloat(form.discount) || 0,
         grand_total: grandTotal,
-        bank_account: form.bank_account,
+        bank_choice: form.bank_account || 'primary',
         items: form.items.map(i => ({
           item_id: i.item_id || null,
           name: i.name,
@@ -269,14 +269,14 @@ export default function InvoiceList() {
                   return (
                     <tr key={inv.id}>
                       <td className="mono" style={{ color: 'var(--gold)' }}>{inv.id}</td>
-                      <td>{formatDate(inv.invoice_date)}</td>
+                      <td>{formatDate(inv.date || inv.invoice_date)}</td>
                       <td style={{ color: 'var(--teal)', fontWeight: 500 }}>{formatDate(inv.travel_date)}</td>
                       <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{inv.customers?.name || '—'}</td>
                       <td className="mono">{inv.customers?.mobile || '—'}</td>
                       <td className="mono text-right">{money(inv.grand_total, currencySymbol)}</td>
                       <td className="mono text-right" style={{ color: 'var(--teal)' }}>{money(received, currencySymbol)}</td>
                       <td className="mono text-right" style={{ color: due > 0 ? 'var(--red)' : 'var(--text-muted)' }}>{money(due, currencySymbol)}</td>
-                      <td style={{ color: 'var(--text-muted)' }}>{inv.employees?.name || '—'}</td>
+                      <td style={{ color: 'var(--text-muted)' }}>{employees.find(e => e.id === inv.sales_by_id || e.id === inv.sales_by)?.name || inv.employees?.name || '—'}</td>
                       <td><StatusPill grandTotal={inv.grand_total} received={received} /></td>
                       <td>
                         <div className="actions-col">
@@ -567,8 +567,9 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
   const items = inv.items || []
   const subtotal = invoiceSubtotal(items)
 
-  const bank = inv.bank_account === 'primary' ? settings?.primaryBank :
-    inv.bank_account === 'secondary' ? settings?.secondaryBank : null
+  const bankChoice = inv.bank_choice || inv.bank_account || 'none'
+  const bank = bankChoice === 'primary' ? settings?.primaryBank :
+    bankChoice === 'secondary' ? settings?.secondaryBank : null
 
   const bankHtml = bank?.bankName ? `
     <div class="bank-box">
@@ -600,10 +601,10 @@ function buildInvoiceHtml(inv, receipts, settings, currencySymbol) {
     <div class="travel-date-banner">✈ TRAVEL DATE: ${formatDate(inv.travel_date)}</div>
     <div class="doc-meta">
       <div class="doc-meta-row"><span class="doc-meta-label">Invoice No:</span><span class="doc-meta-value">${escapeHtml(inv.id)}</span></div>
-      <div class="doc-meta-row"><span class="doc-meta-label">Invoice Date:</span><span class="doc-meta-value">${formatDate(inv.invoice_date)}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label">Invoice Date:</span><span class="doc-meta-value">${formatDate(inv.date || inv.invoice_date)}</span></div>
       <div class="doc-meta-row"><span class="doc-meta-label">Customer:</span><span class="doc-meta-value">${escapeHtml(inv.customers?.name || '—')}</span></div>
       <div class="doc-meta-row"><span class="doc-meta-label">Phone:</span><span class="doc-meta-value">${escapeHtml(inv.customers?.mobile || '—')}</span></div>
-      <div class="doc-meta-row"><span class="doc-meta-label">No. of Travelers:</span><span class="doc-meta-value">${inv.num_travelers || 1}</span></div>
+      <div class="doc-meta-row"><span class="doc-meta-label">No. of Travelers:</span><span class="doc-meta-value">${inv.travelers || inv.num_travelers || 1}</span></div>
       <div class="doc-meta-row"><span class="doc-meta-label">Sales By:</span><span class="doc-meta-value">${escapeHtml(inv.employees?.name || '—')}</span></div>
     </div>
 

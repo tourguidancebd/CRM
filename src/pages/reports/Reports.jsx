@@ -33,7 +33,7 @@ export default function Reports() {
   const loadAllData = useCallback(async () => {
     setLoading(true)
     const [invRes, expRes, custRes, rcptRes] = await Promise.all([
-      supabase.from('invoices').select('*, customers(name, mobile, email), employees(id, name), receipts(amount)').order('invoice_date', { ascending: false }),
+      supabase.from('invoices').select('*, customers(name, mobile, email), receipts(amount)').order('created_at', { ascending: false }),
       supabase.from('expenses').select('*').order('date', { ascending: false }),
       supabase.from('customers').select('*').order('name'),
       supabase.from('receipts').select('*').order('date', { ascending: false })
@@ -76,7 +76,7 @@ export default function Reports() {
         const netProfit = grossProfit - itemDiscount
 
         rows.push({
-          date: inv.invoice_date,
+          date: inv.date || inv.invoice_date,
           invoice_id: inv.id,
           customer_name: inv.customers?.name || '—',
           item_name: item.name,
@@ -88,7 +88,7 @@ export default function Reports() {
           gross_profit: grossProfit,
           profit_margin: netProfit,
           sales_by: inv.employees?.name || '—',
-          employee_id: inv.sales_by
+          employee_id: inv.sales_by_id || inv.sales_by
         })
       })
     }
@@ -97,19 +97,19 @@ export default function Reports() {
 
   // Filtered datasets per report
   const dailySalesItems = extractApportionedLineItems(
-    invoices.filter(i => (i.invoice_date || '') === selectedDate)
+    invoices.filter(i => (i.date || i.invoice_date || '') === selectedDate)
   )
 
   const { start: mStart, end: mEnd } = monthRange(selectedMonth)
   const monthlyInvoices = invoices.filter(i => {
-    const d = i.invoice_date || ''
+    const d = i.date || i.invoice_date || ''
     return d >= mStart && d <= mEnd
   })
 
   // Group monthly invoices by day
   const monthlySalesDays = {}
   monthlyInvoices.forEach(inv => {
-    const d = inv.invoice_date || ''
+    const d = inv.date || inv.invoice_date || ''
     if (!monthlySalesDays[d]) {
       monthlySalesDays[d] = { date: d, sales: 0, discount: 0, profit: 0 }
     }
@@ -283,6 +283,59 @@ export default function Reports() {
               <td class="amount-col">${money(totCost, currencySymbol)}</td>
               <td class="amount-col">${money(totGross, currencySymbol)}</td>
               <td class="amount-col">${money(totNet, currencySymbol)}</td>
+            </tr>
+          </tbody>
+        </table>
+      `
+    } else if (activeTab === 'daily-expense') {
+      title = `Daily-Expense-Report-${selectedDate}`
+      const totalExp = dailyExpensesList.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
+      content = `
+        <div class="doc-title">DAILY EXPENSE REPORT</div>
+        <div style="text-align:center;color:#666;font-size:11px;margin-bottom:16px;">Date: <b>${formatDate(selectedDate)}</b></div>
+        <table>
+          <thead>
+            <tr><th>Voucher #</th><th>Category</th><th>Description</th><th>Vendor / Paid To</th><th>Payment Method</th><th class="amount-col">Amount</th></tr>
+          </thead>
+          <tbody>
+            ${dailyExpensesList.map((e) => `
+              <tr>
+                <td class="mono">${escapeHtml(e.id)}</td>
+                <td>${escapeHtml(e.category)}</td>
+                <td>${escapeHtml(e.note || e.description || '—')}</td>
+                <td>${escapeHtml(e.paid_to || e.vendor || '—')}</td>
+                <td>${escapeHtml(e.payment_method || 'Cash')}</td>
+                <td class="amount-col" style="color:#d32f2f">${money(e.amount, currencySymbol)}</td>
+              </tr>
+            `).join('')}
+            <tr class="grand-total-row">
+              <td colspan="5">GRAND TOTAL</td>
+              <td class="amount-col" style="color:#d32f2f">${money(totalExp, currencySymbol)}</td>
+            </tr>
+          </tbody>
+        </table>
+      `
+    } else if (activeTab === 'monthly-expense') {
+      title = `Monthly-Expense-Report-${selectedMonth}`
+      const totalExp = monthlyExpenseList.reduce((s, r) => s + r.amount, 0)
+      content = `
+        <div class="doc-title">MONTHLY EXPENSE STATEMENT</div>
+        <div style="text-align:center;color:#666;font-size:11px;margin-bottom:16px;">Month: <b>${monthLabel(selectedMonth)}</b></div>
+        <table>
+          <thead>
+            <tr><th>#</th><th>Date</th><th class="amount-col">Total Expense</th></tr>
+          </thead>
+          <tbody>
+            ${monthlyExpenseList.map((r, i) => `
+              <tr>
+                <td>${i + 1}</td>
+                <td>${formatDate(r.date)}</td>
+                <td class="amount-col" style="color:#d32f2f">${money(r.amount, currencySymbol)}</td>
+              </tr>
+            `).join('')}
+            <tr class="grand-total-row">
+              <td colspan="2">GRAND TOTAL</td>
+              <td class="amount-col" style="color:#d32f2f">${money(totalExp, currencySymbol)}</td>
             </tr>
           </tbody>
         </table>
@@ -525,8 +578,8 @@ export default function Reports() {
                         <tr key={e.id}>
                           <td className="mono" style={{ color: 'var(--gold)' }}>{e.id}</td>
                           <td><span className="pill pill-gold">{e.category}</span></td>
-                          <td>{e.description || '—'}</td>
-                          <td>{e.vendor || '—'}</td>
+                          <td>{e.note || e.description || '—'}</td>
+                          <td>{e.paid_to || e.vendor || '—'}</td>
                           <td>{e.payment_method || 'Cash'}</td>
                           <td className="mono text-right" style={{ color: 'var(--red)', fontWeight: 600 }}>{money(e.amount, currencySymbol)}</td>
                         </tr>

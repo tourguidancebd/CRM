@@ -148,8 +148,8 @@ export default function ExpenseList() {
     setForm({
       category: exp.category || '',
       date: exp.date || today(),
-      description: exp.description || '',
-      vendor: exp.vendor || '',
+      description: exp.note || exp.description || '',
+      vendor: exp.paid_to || exp.vendor || '',
       payment_method: exp.payment_method || 'Cash',
       amount: exp.amount || ''
     })
@@ -173,8 +173,8 @@ export default function ExpenseList() {
       const payload = {
         category: form.category,
         date: form.date,
-        description: form.description || null,
-        vendor: form.vendor || null,
+        note: form.description || null,
+        paid_to: form.vendor || null,
         payment_method: form.payment_method,
         amount: parseFloat(form.amount)
       }
@@ -271,8 +271,8 @@ export default function ExpenseList() {
     return (
       (exp.id || '').toLowerCase().includes(s) ||
       (exp.category || '').toLowerCase().includes(s) ||
-      (exp.description || '').toLowerCase().includes(s) ||
-      (exp.vendor || '').toLowerCase().includes(s) ||
+      (exp.note || exp.description || '').toLowerCase().includes(s) ||
+      (exp.paid_to || exp.vendor || '').toLowerCase().includes(s) ||
       (exp.payment_method || '').toLowerCase().includes(s)
     )
   })
@@ -367,10 +367,10 @@ export default function ExpenseList() {
                     <td>
                       <span className="pill pill-gold">{exp.category}</span>
                     </td>
-                    <td style={{ color: 'var(--text-primary)', maxWidth: 220 }} className="truncate" title={exp.description || ''}>
-                      {exp.description || '—'}
+                    <td style={{ color: 'var(--text-primary)', maxWidth: 220 }} className="truncate" title={exp.note || exp.description || ''}>
+                      {exp.note || exp.description || '—'}
                     </td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{exp.vendor || '—'}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{exp.paid_to || exp.vendor || '—'}</td>
                     <td>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: 4 }}>
                         {exp.payment_method || 'Cash'}

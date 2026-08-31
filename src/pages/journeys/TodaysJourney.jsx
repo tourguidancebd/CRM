@@ -222,7 +222,7 @@ export default function TodaysJourney() {
                       <td style={{ color: isToday ? 'var(--gold)' : 'var(--teal)', fontWeight: 600 }}>
                         {formatDate(inv.travel_date)} {isToday && '★'}
                       </td>
-                      <td className="text-center mono">{inv.num_travelers || 1}</td>
+                      <td className="text-center mono">{inv.travelers || inv.num_travelers || 1}</td>
                       <td className="mono text-right">{money(inv.grand_total, currencySymbol)}</td>
                       <td className="mono text-right" style={{ color: 'var(--teal)' }}>{money(received, currencySymbol)}</td>
                       <td className="mono text-right" style={{ color: due > 0 ? 'var(--red)' : 'var(--text-muted)' }}>

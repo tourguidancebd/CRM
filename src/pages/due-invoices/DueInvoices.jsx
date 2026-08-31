@@ -110,7 +110,7 @@ export default function DueInvoices() {
                   return (
                     <tr key={inv.id}>
                       <td className="mono" style={{ color: 'var(--gold)', fontWeight: 600 }}>{inv.id}</td>
-                      <td>{formatDate(inv.invoice_date)}</td>
+                      <td>{formatDate(inv.date || inv.invoice_date)}</td>
                       <td style={{ color: 'var(--teal)' }}>{formatDate(inv.travel_date)}</td>
                       <td style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{inv.customers?.name || '—'}</td>
                       <td className="mono">{inv.customers?.mobile || '—'}</td>

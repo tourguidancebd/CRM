@@ -64,7 +64,7 @@ export default function Dashboard() {
 
   // --- CALCULATION LOGIC ---
   // Today's numbers
-  const todayInvoices = invoices.filter(i => (i.invoice_date || '') === todayStr)
+  const todayInvoices = invoices.filter(i => (i.date || i.invoice_date || '') === todayStr)
   const todayExpenses = expenses.filter(e => (e.date || '') === todayStr)
   const todaySales = todayInvoices.reduce((s, i) => s + (parseFloat(i.grand_total) || 0), 0)
   const todayExpenseTotal = todayExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0)
@@ -72,7 +72,7 @@ export default function Dashboard() {
 
   // Current Month numbers
   const monthInvoices = invoices.filter(i => {
-    const d = i.invoice_date || ''
+    const d = i.date || i.invoice_date || ''
     return d >= monthStart && d <= monthEnd
   })
   const monthExpensesList = expenses.filter(e => {
@@ -89,7 +89,7 @@ export default function Dashboard() {
   const seasonalTarget = parseFloat(settings.system?.seasonalTarget) || 0
 
   const seasonalInvoices = invoices.filter(i => {
-    const d = i.invoice_date || ''
+    const d = i.date || i.invoice_date || ''
     return d >= targetStart && d <= targetEnd
   })
   const seasonalExpenses = expenses.filter(e => {
@@ -110,7 +110,7 @@ export default function Dashboard() {
 
   // Agent Specific Metrics
   const myInvoices = invoices.filter(i => {
-    return i.sales_by === profile?.employee_id || (profile?.full_name && i.employees?.name === profile.full_name)
+    return i.sales_by_id === profile?.employee_id || i.sales_by === profile?.employee_id || (profile?.full_name && i.employees?.name === profile.full_name)
   })
   const myTotalSales = myInvoices.reduce((s, i) => s + (parseFloat(i.grand_total) || 0), 0)
   const myNetProfit = periodNetProfit(myInvoices, [])
